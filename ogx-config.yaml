@@ -27,6 +27,10 @@ providers:
   messages:
     - provider_id: builtin
       provider_type: inline::builtin
+      config:
+        kvstore:
+          backend: kv_default
+          namespace: message_batches
   responses:
     - provider_id: builtin
       provider_type: inline::builtin

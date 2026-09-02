@@ -83,8 +83,8 @@ def start_mcp_servers() -> list[subprocess.Popen]:
 def _ogx_command(config: Path) -> list[str]:
     ogx = shutil.which("ogx")
     if ogx:
-        return [ogx, "run", str(config)]
-    return [sys.executable, "-m", "ogx", "run", str(config)]
+        return [ogx, "run", str(config), "--insecure"]
+    return [sys.executable, "-m", "ogx", "run", str(config), "--insecure"]
 
 
 def main() -> None:
