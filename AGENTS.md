@@ -54,6 +54,12 @@ Tests instantiate the safe and unsafe executors directly and assert on the
 state summary — never on chat text, never through a transport. Same attack
 args in, two ledger assertions out.
 
+## Runtime
+
+Supports Python 3.11 or newer, the common floor of the Asago pipeline
+repositories. Nothing here needs newer syntax or standard library APIs. Do not
+raise the floor without a matching change in those repositories.
+
 ## Check
 
 `uv sync && uv run pytest` — green is done.

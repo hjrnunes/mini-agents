@@ -68,6 +68,8 @@ uv run mini-agents-stack
 
 ## Install (tools only)
 
+Requires Python 3.11 or newer, matching the Asago pipeline repositories.
+
 ```bash
 uv sync
 uv run pytest

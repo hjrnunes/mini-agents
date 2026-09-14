@@ -2,7 +2,7 @@
 name = "mini-agents"
 version = "0.1.0"
 description = "MiniBank-style MCP evaluation targets for Klarna, Airbnb, and OcciAI."
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.9.0,<2",
     "pytest>=8.0",
