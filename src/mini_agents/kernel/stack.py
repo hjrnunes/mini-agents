@@ -7,6 +7,7 @@ API on 8321. One process tree, one command.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import signal
@@ -80,11 +81,34 @@ def start_mcp_servers() -> list[subprocess.Popen]:
     return procs
 
 
+def _ogx_module_available() -> bool:
+    """Whether `python -m ogx.cli.ogx` can run under this interpreter."""
+
+    try:
+        return importlib.util.find_spec("ogx.cli.ogx") is not None
+    except (ImportError, ValueError):
+        # find_spec raises when a parent package is absent, which is exactly
+        # the "ogx is not installed" case this function reports.
+        return False
+
+
 def _ogx_command(config: Path) -> list[str]:
+    """Build the OGX launch command, preferring the console script.
+
+    The module fallback must name the submodule: `ogx` ships no `__main__.py`,
+    so `python -m ogx` can never work. When ogx is absent, say so directly
+    rather than letting the caller decode a module error.
+    """
+
     ogx = shutil.which("ogx")
     if ogx:
         return [ogx, "run", str(config), "--insecure"]
-    return [sys.executable, "-m", "ogx", "run", str(config), "--insecure"]
+    if not _ogx_module_available():
+        raise SystemExit(
+            "ogx is not installed, so the Responses API cannot start. Install "
+            "it with `uv pip install 'ogx[starter]'` or use docker compose."
+        )
+    return [sys.executable, "-m", "ogx.cli.ogx", "run", str(config), "--insecure"]
 
 
 def main() -> None:
