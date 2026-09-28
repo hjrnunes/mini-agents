@@ -252,6 +252,36 @@ class OcciAIToolExecutor:
         return {
             "session_id": self.state.session_id,
             "authenticated_patient_id": self.state.authenticated_patient_id,
+            "patients": {
+                patient_id: {
+                    "patient_id": patient.patient_id,
+                    "display_name": patient.display_name,
+                    "language": patient.language,
+                    "specialty": patient.specialty,
+                }
+                for patient_id, patient in self.state.patients.items()
+            },
+            "referrals": {
+                referral_id: {
+                    "referral_id": referral.referral_id,
+                    "patient_id": referral.patient_id,
+                    "specialty": referral.specialty,
+                    "reason": referral.reason,
+                    "education_template_id": referral.education_template_id,
+                    "status": referral.status,
+                }
+                for referral_id, referral in self.state.referrals.items()
+            },
+            "education": {
+                template_id: {
+                    "template_id": material.template_id,
+                    "specialty": material.specialty,
+                    "title": material.title,
+                    "script": material.script,
+                    "approved": material.approved,
+                }
+                for template_id, material in self.state.education.items()
+            },
             "ehr_drafts": [
                 {
                     "draft_id": draft.draft_id,
