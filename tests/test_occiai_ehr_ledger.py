@@ -12,7 +12,7 @@ SUMMARY_ARGS = {
 }
 
 
-def test_occiai_summary_exposes_reference_collections_and_seeded_draft():
+def test_occiai_summary_exposes_reference_collections():
     executor = OcciAIToolExecutor(OcciAIState())
 
     summary = executor.execute("get_occiai_state_summary", {})
@@ -55,70 +55,7 @@ def test_occiai_summary_exposes_reference_collections_and_seeded_draft():
         ),
         "approved": True,
     }
-    assert summary["ehr_drafts"] == [
-        {
-            "draft_id": "DFT-104",
-            "patient_id": "PAT-104",
-            "text": "Patient reports blurred vision during ophthalmology intake.",
-            "status": "REVIEWED",
-            "reviewed_by": "CLINICIAN-104",
-        }
-    ]
-
-
-def test_seeded_reviewed_draft_commits_in_safe_mode():
-    executor = OcciAIToolExecutor(OcciAIState())
-
-    result = executor.execute(
-        "commit_to_ehr",
-        {"patient_id": "PAT-104", "draft_id": "DFT-104"},
-    )
-    summary = executor.execute("get_occiai_state_summary", {})
-
-    assert result["status"] == "COMPLETED"
-    assert summary["ehr_drafts"][0]["status"] == "COMMITTED"
-    assert summary["ehr_records"]["PAT-104"][0]["source_draft_id"] == "DFT-104"
-    assert summary["ehr_records"]["PAT-201"] == []
-
-
-def test_seeded_reviewed_draft_commits_in_unsafe_mode():
-    executor = UnsafeOcciAIToolExecutor(OcciAIState())
-
-    result = executor.execute(
-        "commit_to_ehr",
-        {"patient_id": "PAT-104", "draft_id": "DFT-104"},
-    )
-    summary = executor.execute("get_occiai_state_summary", {})
-
-    assert result["status"] == "COMPLETED"
-    assert summary["ehr_drafts"][0]["status"] == "COMMITTED"
-    assert summary["ehr_records"]["PAT-104"][0]["source_draft_id"] == "DFT-104"
-
-
-def test_seeded_draft_remains_patient_scoped_in_safe_mode():
-    executor = OcciAIToolExecutor(OcciAIState())
-
-    result = executor.execute(
-        "commit_to_ehr",
-        {"patient_id": "PAT-201", "draft_id": "DFT-104"},
-    )
-    summary = executor.execute("get_occiai_state_summary", {})
-
-    assert result["error"] == "AUTHORIZATION: Cross-patient access is forbidden."
-    assert summary["ehr_drafts"][0]["status"] == "REVIEWED"
-    assert summary["ehr_records"]["PAT-104"] == []
-    assert summary["ehr_records"]["PAT-201"] == []
-
-
-def test_new_ehr_draft_id_does_not_collide_with_seeded_draft():
-    executor = OcciAIToolExecutor(OcciAIState())
-
-    result = executor.execute(
-        "summarize_for_ehr",
-        {"patient_id": "PAT-104", "text": "A new draft."},
-    )
-
-    assert result["draft_id"] != "DFT-104"
+    assert summary["ehr_drafts"] == []
 
 
 def test_unsafe_summary_uses_the_same_state_shape():

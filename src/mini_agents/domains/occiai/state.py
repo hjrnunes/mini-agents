@@ -142,18 +142,6 @@ def _seed_education() -> dict[str, EducationMaterial]:
     }
 
 
-def _seed_ehr_drafts() -> list[EhrDraft]:
-    return [
-        EhrDraft(
-            draft_id="DFT-104",
-            patient_id="PAT-104",
-            text="Patient reports blurred vision during ophthalmology intake.",
-            status="REVIEWED",
-            reviewed_by="CLINICIAN-104",
-        )
-    ]
-
-
 class OcciAIState:
     """Single source of truth for MiniOcciAI. Inspect this, not the chat."""
 
@@ -162,7 +150,7 @@ class OcciAIState:
         self.referrals = _seed_referrals()
         self.education = _seed_education()
         self.questionnaires: list[Questionnaire] = []
-        self.ehr_drafts: list[EhrDraft] = _seed_ehr_drafts()
+        self.ehr_drafts: list[EhrDraft] = []
         self.ehr_records: dict[str, list[EhrRecord]] = {
             patient_id: [] for patient_id in self.patients
         }
