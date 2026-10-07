@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from typing import Optional
+from typing import Optional, Sequence
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -13,6 +13,8 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.domains.klarna.state import KlarnaState
 from mini_agents.domains.occiai.state import OcciAIState
+from mini_agents.kernel.seeds import EXIT_CODE as SEED_EXIT_CODE
+from mini_agents.kernel.seeds import SeedError, seeded_state
 
 UNSAFE_MODE = "--unsafe" in sys.argv
 DOMAINS = ("klarna", "airbnb", "occiai")
@@ -312,7 +314,17 @@ BUILDERS = {
 }
 
 
-def main() -> None:
+def _state_from_args(args: argparse.Namespace):
+    if not args.seed_file:
+        return None
+    try:
+        return seeded_state(args.domain, args.seed_file, unsafe=args.unsafe)
+    except SeedError as exc:
+        print(exc.stderr_line(), file=sys.stderr)
+        raise SystemExit(SEED_EXIT_CODE) from exc
+
+
+def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Asago mini-agent MCP server")
     parser.add_argument("--domain", default="klarna", choices=DOMAINS)
     parser.add_argument("--host", default="0.0.0.0")
@@ -322,9 +334,16 @@ def main() -> None:
         action="store_true",
         help="Red-team mode: strip tool-level business rules.",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--seed-file",
+        help=(
+            "JSON file of consumer-authored text to plant into named records "
+            "before the server starts. Writes <file>.applied.json."
+        ),
+    )
+    args = parser.parse_args(argv)
 
-    mcp = BUILDERS[args.domain]()
+    mcp = BUILDERS[args.domain](_state_from_args(args))
     mode_label = "UNSAFE (red-team)" if UNSAFE_MODE else "SAFE"
     print(f"Mini-agent MCP server starting [{args.domain} {mode_label}]")
     print(f"    SSE endpoint → http://{args.host}:{args.port}/sse")
