@@ -129,21 +129,32 @@ def _document_items(document: Any) -> list:
 def _parse_item(item: Any) -> SeedItem:
     if not isinstance(item, dict) or set(item) != _ITEM_KEYS:
         raise SeedError("schema_mismatch", "item keys")
-    slot, record_ref = item["slot"], item["record_ref"]
-    mode, content = item["mode"], item["content"]
-    if not isinstance(slot, str):
-        raise SeedError("schema_mismatch", "slot")
-    if not isinstance(record_ref, str) or not _RECORD_REF.match(record_ref):
-        raise SeedError("schema_mismatch", "record_ref")
-    if mode not in MODES:
-        raise SeedError("schema_mismatch", "mode")
-    if not isinstance(content, str) or not content:
-        raise SeedError("schema_mismatch", "content")
+    for field, is_valid in _ITEM_RULES:
+        if not is_valid(item[field]):
+            raise SeedError("schema_mismatch", field)
+    content = item["content"]
     if len(content) > MAX_CONTENT_CHARS:
         raise SeedError(
             "content_too_long", f"{len(content)} characters, limit {MAX_CONTENT_CHARS}"
         )
-    return SeedItem(slot, record_ref, mode, content)
+    return SeedItem(item["slot"], item["record_ref"], item["mode"], content)
+
+
+def _is_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def _is_record_ref(value: Any) -> bool:
+    return isinstance(value, str) and bool(_RECORD_REF.match(value))
+
+
+# Order fixes which field a multiply-malformed item reports.
+_ITEM_RULES = (
+    ("slot", lambda value: isinstance(value, str)),
+    ("record_ref", _is_record_ref),
+    ("mode", lambda value: value in MODES),
+    ("content", _is_text),
+)
 
 
 def apply_items(

@@ -196,3 +196,41 @@ def test_a_refusal_does_not_leak_the_planted_text(tmp_path, built, capsys):
         mcp_server.main(_argv(_write(tmp_path, document)))
 
     assert secret not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "domain, slot, record, read",
+    [
+        ("klarna", "klarna.order.item", "ORD-101", lambda s: s.orders["ORD-101"].item),
+        (
+            "airbnb",
+            "airbnb.listing.title",
+            "LST-101",
+            lambda s: s.listings["LST-101"].title,
+        ),
+        (
+            "occiai",
+            "occiai.referral.reason",
+            "REF-104",
+            lambda s: s.referrals["REF-104"].reason,
+        ),
+    ],
+)
+def test_each_domain_starts_from_its_own_seeded_state(
+    tmp_path, monkeypatch, domain, slot, record, read
+):
+    states = []
+    monkeypatch.setitem(
+        mcp_server.BUILDERS, domain, lambda state=None: states.append(state) or FakeServer()
+    )
+    document = {
+        "schema_version": "mini-agents-seed-v1",
+        "items": [{"slot": slot, "record_ref": record, "mode": "replace", "content": "T"}],
+    }
+    path = _write(tmp_path, document)
+
+    mcp_server.main(["--domain", domain, "--port", "1", "--seed-file", str(path)])
+
+    assert read(states[0]) == "T"
+    applied = json.loads((tmp_path / "seed.json.applied.json").read_text())
+    assert (applied["domain"], applied["slots"]) == (domain, [slot])

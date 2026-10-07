@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -41,7 +42,20 @@ def test_the_generator_reproduces_the_committed_file_byte_for_byte():
     assert render_manifest() == MANIFEST_PATH.read_text()
 
 
+def _script():
+    spec = importlib.util.spec_from_file_location(
+        "gen_manifest", ROOT / "scripts" / "gen_manifest.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_the_script_check_passes_on_the_committed_file():
+    assert _script().main(["--check"]) == 0
+
+
+def test_the_script_runs_as_a_command():
     done = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "gen_manifest.py"), "--check"],
         capture_output=True,
@@ -51,23 +65,38 @@ def test_the_script_check_passes_on_the_committed_file():
     assert done.returncode == 0, done.stderr
 
 
-def test_the_script_check_fails_when_the_file_is_stale(tmp_path):
+def test_the_script_check_fails_when_the_file_is_stale(tmp_path, capsys):
     stale = tmp_path / "stale.json"
     stale.write_text("{}\n")
-    done = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "gen_manifest.py"),
-            "--check",
-            "--path",
-            str(stale),
-        ],
-        capture_output=True,
-        text=True,
-    )
 
-    assert done.returncode == 1
-    assert "gen_manifest.py" in done.stderr
+    assert _script().main(["--check", "--path", str(stale)]) == 1
+    assert "gen_manifest.py" in capsys.readouterr().err
+
+
+def test_the_script_check_fails_when_the_file_is_missing(tmp_path):
+    assert _script().main(["--check", "--path", str(tmp_path / "none.json")]) == 1
+
+
+def test_the_script_writes_the_generated_file(tmp_path):
+    target = tmp_path / "out.json"
+
+    assert _script().main(["--path", str(target)]) == 0
+    assert target.read_text() == render_manifest()
+
+
+def test_the_script_reports_a_generator_error_and_writes_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    script = _script()
+
+    def broken():
+        raise ManifestError("klarna: tool x is registered but has no TOOL_ACCESS entry")
+
+    monkeypatch.setattr(script, "render_manifest", broken)
+
+    assert script.main(["--path", str(tmp_path / "out.json")]) == 1
+    assert "tool x" in capsys.readouterr().err
+    assert not (tmp_path / "out.json").exists()
 
 
 def test_the_manifest_validates_against_its_schema():
