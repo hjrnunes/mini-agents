@@ -99,7 +99,7 @@ def test_a_valid_file_writes_the_confirmation_next_to_it(tmp_path, built):
 def test_the_confirmation_digest_covers_the_bytes_not_the_parsed_document(
     tmp_path, built
 ):
-    spaced = json.dumps(VALID, indent=4).encode()
+    spaced = b"  " + json.dumps(VALID, indent=4).encode() + b"\n\n"
     path = _write(tmp_path, spaced)
 
     mcp_server.main(_argv(path))
