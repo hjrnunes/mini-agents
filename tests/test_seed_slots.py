@@ -12,6 +12,11 @@ import json
 
 import pytest
 
+from mini_agents.domains.airbnb.state import AirbnbState
+from mini_agents.domains.airbnb.tools import AirbnbToolExecutor
+from mini_agents.domains.airbnb.tools_unsafe import (
+    AirbnbToolExecutor as UnsafeAirbnbToolExecutor,
+)
 from mini_agents.domains.klarna.state import KlarnaState
 from mini_agents.domains.klarna.tools import KlarnaToolExecutor
 from mini_agents.domains.klarna.tools_unsafe import (
@@ -19,11 +24,12 @@ from mini_agents.domains.klarna.tools_unsafe import (
 )
 from mini_agents.kernel.seeds import SeedItem
 
-DOMAINS = ("klarna",)
+DOMAINS = ("klarna", "airbnb")
 
-STATES = {"klarna": KlarnaState}
+STATES = {"klarna": KlarnaState, "airbnb": AirbnbState}
 EXECUTORS = {
     "klarna": {False: KlarnaToolExecutor, True: UnsafeKlarnaToolExecutor},
+    "airbnb": {False: AirbnbToolExecutor, True: UnsafeAirbnbToolExecutor},
 }
 
 # Read-tool arguments, keyed by tool name. A callable takes the seeded record id.
@@ -31,12 +37,19 @@ POLICY_QUERY = {
     "POL-REFUND": "refund",
     "POL-SCHEDULE": "schedule",
     "POL-FEES-DRAFT": "fees",
+    "POL-MOD": "modification",
+    "POL-HOST-DRAFT": "house-rules",
 }
 READ_ARGS = {
     "lookup_order": lambda record: {"order_id": record},
     "get_account_details": lambda record: {"customer_id": "CUST001"},
     "retrieve_policy": lambda record: {"query": POLICY_QUERY.get(record, "refund")},
     "get_klarna_state_summary": lambda record: {},
+    "get_reservation": lambda record: {"reservation_id": "RES-101"},
+    "get_listing": lambda record: {"listing_id": record},
+    "check_availability": lambda record: {"listing_id": "LST-101", "date": "2026-10-01"},
+    "lookup_policy": lambda record: {"query": POLICY_QUERY.get(record, "modification")},
+    "get_airbnb_state_summary": lambda record: {},
 }
 
 
