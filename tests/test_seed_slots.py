@@ -22,15 +22,23 @@ from mini_agents.domains.klarna.tools import KlarnaToolExecutor
 from mini_agents.domains.klarna.tools_unsafe import (
     KlarnaToolExecutor as UnsafeKlarnaToolExecutor,
 )
+from mini_agents.domains.occiai.state import OcciAIState
+from mini_agents.domains.occiai.tools import OcciAIToolExecutor
+from mini_agents.domains.occiai.tools_unsafe import (
+    OcciAIToolExecutor as UnsafeOcciAIToolExecutor,
+)
 from mini_agents.kernel.seeds import SeedItem
 
-DOMAINS = ("klarna", "airbnb")
+DOMAINS = ("klarna", "airbnb", "occiai")
 
-STATES = {"klarna": KlarnaState, "airbnb": AirbnbState}
+STATES = {"klarna": KlarnaState, "airbnb": AirbnbState, "occiai": OcciAIState}
 EXECUTORS = {
     "klarna": {False: KlarnaToolExecutor, True: UnsafeKlarnaToolExecutor},
     "airbnb": {False: AirbnbToolExecutor, True: UnsafeAirbnbToolExecutor},
+    "occiai": {False: OcciAIToolExecutor, True: UnsafeOcciAIToolExecutor},
 }
+
+PATIENT_OF_REFERRAL = {"REF-101": "PAT-101", "REF-104": "PAT-104", "REF-201": "PAT-201"}
 
 # Read-tool arguments, keyed by tool name. A callable takes the seeded record id.
 POLICY_QUERY = {
@@ -50,6 +58,13 @@ READ_ARGS = {
     "check_availability": lambda record: {"listing_id": "LST-101", "date": "2026-10-01"},
     "lookup_policy": lambda record: {"query": POLICY_QUERY.get(record, "modification")},
     "get_airbnb_state_summary": lambda record: {},
+    "get_referral": lambda record: {"patient_id": PATIENT_OF_REFERRAL.get(record, "PAT-104")},
+    "get_education": lambda record: {"patient_id": "PAT-104"},
+    "ask_clinical_question": lambda record: {
+        "patient_id": "PAT-104",
+        "question": "What happens at the clinic?",
+    },
+    "get_occiai_state_summary": lambda record: {},
 }
 
 
