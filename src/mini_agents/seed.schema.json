@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mini-agents-seed-v1",
+  "description": "Startup seed file for python -m mini_agents --seed-file. The process also checks what a schema cannot: the slot exists for the domain, the record is one the carrier returns in this mode, and carrier_operation matches the slot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "items"],
+  "properties": {
+    "schema_version": { "const": "mini-agents-seed-v1" },
+    "carrier_operation": { "type": "string" },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slot", "record_ref", "mode", "content"],
+        "properties": {
+          "slot": { "type": "string" },
+          "record_ref": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+          },
+          "mode": { "enum": ["replace", "append"] },
+          "content": { "type": "string", "minLength": 1, "maxLength": 2000 }
+        }
+      }
+    }
+  }
+}

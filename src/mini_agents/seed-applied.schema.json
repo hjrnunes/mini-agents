@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mini-agents-seed-applied-v1",
+  "description": "Confirmation the process writes to <seed-file>.applied.json after it plants a seed and before it starts the server. The file is the only report of the seed; the agent can read the state-summary tool, so the target reports nothing through a tool.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "domain", "mode", "sha256", "slots"],
+  "properties": {
+    "schema_version": { "const": "mini-agents-seed-applied-v1" },
+    "domain": { "enum": ["klarna", "airbnb", "occiai"] },
+    "mode": { "enum": ["safe", "unsafe"] },
+    "sha256": {
+      "description": "SHA-256 of the seed file's bytes.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "slots": {
+      "description": "Slot id of each applied item, in file order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": { "type": "string", "pattern": "^[a-z]+\\.[a-z_]+\\.[a-z_]+$" }
+    }
+  }
+}

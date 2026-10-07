@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import jsonschema
 import pytest
 
 from mini_agents.domains.klarna import seeds as klarna_seeds
@@ -53,6 +55,39 @@ def test_a_valid_document_parses_to_items():
     assert [(i.slot, i.record_ref, i.mode, i.content) for i in document.items] == [
         ("klarna.order.item", "ORD-101", "replace", "planted")
     ]
+
+
+def _schema_validator():
+    path = Path(parse_seed.__code__.co_filename).parent.parent / "seed.schema.json"
+    return jsonschema.Draft202012Validator(json.loads(path.read_text()))
+
+
+def test_the_seed_schema_accepts_what_the_process_accepts():
+    validator = _schema_validator()
+    accepted = [
+        _document(),
+        _document(carrier_operation="lookup_order"),
+        _document(items=[ITEM] * MAX_ITEMS),
+        _document(items=[_with(content="x" * MAX_CONTENT_CHARS)]),
+        _document(items=[_with(mode="append")]),
+    ]
+
+    for raw in accepted:
+        parse_seed(raw)
+        validator.validate(json.loads(raw))
+
+
+def test_the_seed_schema_rejects_what_the_process_refuses_before_it_reads_state():
+    validator = _schema_validator()
+    refused = [
+        raw for name, raw in SCHEMA_MISMATCHES.items() if name != "not json"
+    ] + [
+        _document(items=[ITEM] * (MAX_ITEMS + 1)),
+        _document(items=[_with(content="x" * (MAX_CONTENT_CHARS + 1))]),
+    ]
+
+    for raw in refused:
+        assert not validator.is_valid(json.loads(raw)), raw
 
 
 def test_the_reason_codes_are_a_closed_set():

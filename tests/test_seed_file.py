@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
+import jsonschema
 import pytest
 
 from mini_agents.kernel import mcp_server
@@ -90,6 +92,8 @@ def test_a_valid_file_writes_the_confirmation_next_to_it(tmp_path, built):
         "slots": ["klarna.order.item", "klarna.order.item"],
     }
     assert not list(tmp_path.glob("*.part"))
+    schema_path = Path(mcp_server.__file__).parent.parent / "seed-applied.schema.json"
+    jsonschema.Draft202012Validator(json.loads(schema_path.read_text())).validate(applied)
 
 
 def test_the_confirmation_digest_covers_the_bytes_not_the_parsed_document(
