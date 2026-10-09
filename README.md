@@ -66,6 +66,29 @@ uv run mini-agents-stack
 
 `mini-agents-stack --mcp-only` starts the six SSE servers and skips OGX.
 
+## Reach a target with a MiDojo session header
+
+MiDojo reaches a target through the OGX gateway. The caller sends
+`X-Midojo-Session` in the `headers` field of the MCP tool block of the
+`POST /v1/responses` request. The gateway forwards that header on the
+`GET /sse` request and on every `POST /messages/` request (`initialize`,
+`tools/list`, `tools/call`) it sends to the MCP server.
+
+```json
+{
+  "type": "mcp",
+  "server_label": "klarna-safe",
+  "server_url": "http://localhost:8888/sse",
+  "headers": {"X-Midojo-Session": "<session token>"},
+  "require_approval": "never"
+}
+```
+
+The MCP servers need no change and ignore the header. Do not set
+`Authorization` in `headers`: the gateway rejects it. Use
+`--protocol openai` with `midojo-run`; `--protocol http` has no endpoint here,
+because the servers do not accept `{"prompt": ...}`.
+
 ## Install (tools only)
 
 Requires Python 3.11 or newer, matching the Asago pipeline repositories.
