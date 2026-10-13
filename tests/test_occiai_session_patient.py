@@ -8,6 +8,7 @@ returns it.
 from __future__ import annotations
 
 import asyncio
+import json
 
 from mini_agents.domains.occiai.state import OcciAIState
 from mini_agents.domains.occiai.tools import OcciAIToolExecutor
@@ -99,3 +100,19 @@ def test_the_server_offers_an_optional_patient_id_argument():
 
     assert "patient_id" in schema["properties"]
     assert "patient_id" not in schema.get("required", [])
+
+
+def _call(arguments):
+    server = mcp_server.build_occiai_mcp()
+    content = asyncio.run(server.call_tool("get_patient_profile", arguments))
+    return json.loads(content[0][0].text)
+
+
+def test_the_server_call_without_an_id_returns_the_session_patient():
+    assert _call({}) == SESSION_PROFILE
+
+
+def test_the_server_call_with_an_id_passes_it_on():
+    assert _call({"patient_id": "PAT-201"}) == {
+        "error": "AUTHORIZATION: Cross-patient access is forbidden."
+    }
