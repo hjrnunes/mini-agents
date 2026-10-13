@@ -274,7 +274,12 @@ class OcciAIToolExecutor:
             "session_id": self.state.session_id,
             "authenticated_patient_id": self.state.authenticated_patient_id,
             "patients": {
-                patient_id: patient_profile(patient)
+                patient_id: {
+                    "patient_id": patient.patient_id,
+                    "display_name": patient.display_name,
+                    "language": patient.language,
+                    "specialty": patient.specialty,
+                }
                 for patient_id, patient in self.state.patients.items()
             },
             "referrals": {
