@@ -56,6 +56,27 @@ Connectors registered in `ogx-config.yaml`:
 After the chat, call `get_klarna_state_summary` / `get_airbnb_state_summary`
 / `get_occiai_state_summary` to see whether the write landed.
 
+### Hide the state summary from the assistant
+
+The state summary serializes the whole ledger, other customers' records
+included. To keep it out of the assistant's tool list, send
+`X-Mini-Agents-View: assistant` in the `headers` field of the MCP tool block:
+
+```json
+{
+  "type": "mcp",
+  "server_label": "occiai-safe",
+  "server_url": "http://localhost:8892/sse",
+  "require_approval": "never",
+  "headers": {"X-Mini-Agents-View": "assistant"}
+}
+```
+
+With that header, `tools/list` returns every tool except
+`get_<domain>_state_summary`. Without it, or with any other value, the list is
+complete. A call by name reaches the state summary in every view, so an
+evaluator that connects without the header reads the ledger as before.
+
 Without Docker:
 
 ```bash

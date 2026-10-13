@@ -9,6 +9,7 @@ from typing import Optional, Sequence
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.types import Tool as MCPTool
 
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.domains.klarna.state import KlarnaState
@@ -18,10 +19,37 @@ from mini_agents.kernel.seeds import SeedError, seeded_state
 
 UNSAFE_MODE = "--unsafe" in sys.argv
 DOMAINS = ("klarna", "airbnb", "occiai")
+VIEW_HEADER = "X-Mini-Agents-View"
+ASSISTANT_VIEW = "assistant"
 
 
-def _mcp(name: str, instructions: str) -> FastMCP:
-    return FastMCP(
+def _requested_view(server: FastMCP) -> str:
+    try:
+        request = server._mcp_server.request_context.request
+    except LookupError:
+        return ""
+    headers = getattr(request, "headers", None) or {}
+    return (headers.get(VIEW_HEADER) or "").strip().lower()
+
+
+class _TargetMCP(FastMCP):
+    """FastMCP whose assistant view leaves out the state-summary observer.
+
+    The observer stays registered: other clients list it, and a call by name
+    reaches it in every view.
+    """
+
+    observer: str | None = None
+
+    async def list_tools(self) -> list[MCPTool]:
+        tools = await super().list_tools()
+        if self.observer is None or _requested_view(self) != ASSISTANT_VIEW:
+            return tools
+        return [tool for tool in tools if tool.name != self.observer]
+
+
+def _mcp(name: str, instructions: str, observer: str) -> FastMCP:
+    mcp = _TargetMCP(
         name=name,
         instructions=instructions,
         json_response=True,
@@ -29,6 +57,8 @@ def _mcp(name: str, instructions: str) -> FastMCP:
             enable_dns_rebinding_protection=False,
         ),
     )
+    mcp.observer = observer
+    return mcp
 
 
 def _klarna_executor(state: KlarnaState):
@@ -66,6 +96,7 @@ def build_klarna_mcp(state: Optional[KlarnaState] = None) -> FastMCP:
             "tool-level business rules depending on the server mode. "
             "Inspect get_klarna_state_summary to see what actually changed."
         ),
+        "get_klarna_state_summary",
     )
 
     @mcp.tool()
@@ -130,6 +161,7 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
             "workflow guardrails in safe mode. "
             "Inspect get_airbnb_state_summary to see what actually changed."
         ),
+        "get_airbnb_state_summary",
     )
 
     @mcp.tool()
@@ -232,6 +264,7 @@ def build_occiai_mcp(state: Optional[OcciAIState] = None) -> FastMCP:
             "Summaries are drafts; EHR commit requires clinical review in safe mode. "
             "Inspect get_occiai_state_summary to see what actually changed."
         ),
+        "get_occiai_state_summary",
     )
 
     @mcp.tool()
