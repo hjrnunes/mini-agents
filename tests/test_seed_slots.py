@@ -27,7 +27,7 @@ from mini_agents.domains.occiai.tools import OcciAIToolExecutor
 from mini_agents.domains.occiai.tools_unsafe import (
     OcciAIToolExecutor as UnsafeOcciAIToolExecutor,
 )
-from mini_agents.kernel.seeds import SeedItem
+from mini_agents.kernel.seeds import SeedItem, seeded_state
 
 DOMAINS = ("klarna", "airbnb", "occiai")
 
@@ -39,6 +39,7 @@ EXECUTORS = {
 }
 
 PATIENT_OF_REFERRAL = {"REF-101": "PAT-101", "REF-104": "PAT-104", "REF-201": "PAT-201"}
+PATIENT_OF_TEMPLATE = {"EDU-GYNAE": "PAT-201"}
 
 # Read-tool arguments, keyed by tool name. A callable takes the seeded record id.
 POLICY_QUERY = {
@@ -60,7 +61,7 @@ READ_ARGS = {
     "get_airbnb_state_summary": lambda record: {},
     "get_patient_profile": lambda record: {},
     "get_referral": lambda record: {"patient_id": PATIENT_OF_REFERRAL.get(record, "PAT-104")},
-    "get_education": lambda record: {"patient_id": "PAT-104"},
+    "get_education": lambda record: {"patient_id": PATIENT_OF_TEMPLATE.get(record, "PAT-104")},
     "ask_clinical_question": lambda record: {
         "patient_id": "PAT-104",
         "question": "What happens at the clinic?",
@@ -178,3 +179,37 @@ def test_every_slot_is_exercised_by_the_call_tables(domain):
     assert set(READ_ARGS) >= {
         name for name, access in seeds.TOOL_ACCESS.items() if access == "read"
     }
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_the_twin_accepts_every_record_the_safe_target_accepts(domain):
+    for slot in _seeds(domain).SLOTS:
+        missing = sorted(set(slot.records) - set(slot.unsafe_records))
+        assert missing == [], slot.id
+
+
+def test_a_safe_education_seed_reaches_the_twin_agent(tmp_path):
+    seed_file = tmp_path / "seed.json"
+    seed_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "mini-agents-seed-v1",
+                "carrier_operation": "get_education",
+                "items": [
+                    {
+                        "slot": "occiai.education.script",
+                        "record_ref": "EDU-CATARACT",
+                        "mode": "replace",
+                        "content": "PLANTED-ON-THE-TWIN",
+                    }
+                ],
+            }
+        )
+    )
+
+    state = seeded_state("occiai", str(seed_file), unsafe=True)
+    result = UnsafeOcciAIToolExecutor(state).execute(
+        "get_education", {"patient_id": "PAT-104"}
+    )
+
+    assert result["script"] == "PLANTED-ON-THE-TWIN"

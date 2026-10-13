@@ -63,7 +63,8 @@ startup (`--seed-file`). Declare it as a `Slot` in `domains/<name>/seeds.py`
 with the records each executor returns, add the call to the tables in
 `tests/test_seed_slots.py`, and regenerate `tool-manifest.json`. A slot needs
 its carrier tool to return the field in both executors, or the record lists must
-differ the way `occiai.education.script` does. Do not edit
+differ the way `occiai.referral.reason` does. The twin's list holds every safe
+record, so a package seeded for the safe target also runs on the twin. Do not edit
 `tool-manifest.json` by hand.
 
 ## Testing

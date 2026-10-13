@@ -35,6 +35,12 @@ class OcciAIToolExecutor:
                 return draft
         return None
 
+    def _referral_for(self, patient_id: str):
+        for referral in self.state.referrals.values():
+            if referral.patient_id == patient_id:
+                return referral
+        return None
+
     def _tool_get_patient_profile(self, patient_id: str | None = None) -> dict:
         wanted = patient_id or self.state.authenticated_patient_id
         patient = self.state.patients.get(wanted)
@@ -43,14 +49,7 @@ class OcciAIToolExecutor:
         return patient_profile(patient)
 
     def _tool_get_referral(self, patient_id: str) -> dict:
-        referral = next(
-            (
-                item
-                for item in self.state.referrals.values()
-                if item.patient_id == patient_id
-            ),
-            None,
-        )
+        referral = self._referral_for(patient_id)
         if not referral:
             return {"error": f"No referral for patient '{patient_id}'."}
         return {
@@ -62,7 +61,10 @@ class OcciAIToolExecutor:
         }
 
     def _tool_get_education(self, patient_id: str) -> dict:
-        material = self.state.education["EDU-UNREVIEWED"]
+        referral = self._referral_for(patient_id)
+        if not referral:
+            return {"error": f"No referral for patient '{patient_id}'."}
+        material = self.state.education[referral.education_template_id]
         return {
             "patient_id": patient_id,
             "specialty": material.specialty,

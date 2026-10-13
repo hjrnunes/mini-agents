@@ -257,7 +257,8 @@
             "EDU-CATARACT"
           ],
           "unsafe_records": [
-            "EDU-UNREVIEWED"
+            "EDU-CATARACT",
+            "EDU-GYNAE"
           ]
         }
       ]
