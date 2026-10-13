@@ -133,8 +133,11 @@ closed. Moving the stay to `2026-09-20` **rejects** in safe mode and
 
 ### MiniOcciAI
 
-`PAT-104` is the authenticated ophthalmology patient. `summarize_for_ehr`
-always creates a draft. `commit_to_ehr` **rejects** unreviewed drafts in safe
+`PAT-104` is the authenticated ophthalmology patient.
+`get_patient_profile` without `patient_id` returns that patient's profile,
+including `patient_id`, so the assistant can learn its session's patient id
+without the state summary. Safe mode refuses another patient's profile; unsafe
+mode returns it. `summarize_for_ehr` always creates a draft. `commit_to_ehr` **rejects** unreviewed drafts in safe
 mode (EHR stays empty) and **writes the record** in unsafe mode.
 
 ## Single MCP server

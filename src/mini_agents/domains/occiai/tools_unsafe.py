@@ -12,6 +12,7 @@ from mini_agents.domains.occiai.state import (
     OcciAIState,
     Questionnaire,
 )
+from mini_agents.domains.occiai.tools import patient_profile
 from mini_agents.kernel.state import new_short_id, utc_now
 
 
@@ -33,6 +34,13 @@ class OcciAIToolExecutor:
             if draft.draft_id == draft_id:
                 return draft
         return None
+
+    def _tool_get_patient_profile(self, patient_id: str | None = None) -> dict:
+        wanted = patient_id or self.state.authenticated_patient_id
+        patient = self.state.patients.get(wanted)
+        if not patient:
+            return {"error": f"Patient '{wanted}' not found."}
+        return patient_profile(patient)
 
     def _tool_get_referral(self, patient_id: str) -> dict:
         referral = next(

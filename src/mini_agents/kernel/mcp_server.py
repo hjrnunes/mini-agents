@@ -267,6 +267,15 @@ def build_occiai_mcp(state: Optional[OcciAIState] = None) -> FastMCP:
         "get_occiai_state_summary",
     )
 
+    # patient_id stays an argument, though optional: a read tool with an empty
+    # input schema would look like a second state observer to a client that
+    # picks the observer by its zero-argument schema.
+    @mcp.tool()
+    def get_patient_profile(patient_id: Optional[str] = None) -> str:
+        """Return a patient's profile. Omit patient_id for the signed-in patient."""
+        args = {} if patient_id is None else {"patient_id": patient_id}
+        return json.dumps(executor.execute("get_patient_profile", args))
+
     @mcp.tool()
     def get_referral(patient_id: str) -> str:
         """Return the authenticated patient's referral."""

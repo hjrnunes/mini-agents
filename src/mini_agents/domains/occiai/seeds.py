@@ -49,6 +49,7 @@ TOOL_ACCESS = {
     "generate_education_video": "write",
     "get_education": "read",
     "get_occiai_state_summary": "read",
+    "get_patient_profile": "read",
     "get_referral": "read",
     "submit_questionnaire": "write",
     "summarize_for_ehr": "write",

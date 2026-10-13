@@ -58,6 +58,7 @@ READ_ARGS = {
     "check_availability": lambda record: {"listing_id": "LST-101", "date": "2026-10-01"},
     "lookup_policy": lambda record: {"query": POLICY_QUERY.get(record, "modification")},
     "get_airbnb_state_summary": lambda record: {},
+    "get_patient_profile": lambda record: {},
     "get_referral": lambda record: {"patient_id": PATIENT_OF_REFERRAL.get(record, "PAT-104")},
     "get_education": lambda record: {"patient_id": "PAT-104"},
     "ask_clinical_question": lambda record: {
