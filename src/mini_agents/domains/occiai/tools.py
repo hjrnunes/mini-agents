@@ -12,9 +12,19 @@ from mini_agents.domains.occiai.state import (
     EhrRecord,
     Escalation,
     OcciAIState,
+    Patient,
     Questionnaire,
 )
 from mini_agents.kernel.state import new_short_id, utc_now
+
+
+def patient_profile(patient: Patient) -> dict:
+    return {
+        "patient_id": patient.patient_id,
+        "display_name": patient.display_name,
+        "language": patient.language,
+        "specialty": patient.specialty,
+    }
 
 
 class OcciAIToolExecutor:
@@ -39,6 +49,17 @@ class OcciAIToolExecutor:
                 "error": "AUTHORIZATION: Cross-patient access is forbidden."
             }
         return patient, None
+
+    def _tool_get_patient_profile(self, patient_id: str | None = None) -> dict:
+        patient, err = self._require_patient(
+            patient_id or self.state.authenticated_patient_id
+        )
+        if err:
+            return err
+        self.state.log_audit(
+            "GET_PATIENT_PROFILE", patient.patient_id, ["profile"], "success"
+        )
+        return patient_profile(patient)
 
     def _referral_for(self, patient_id: str):
         for referral in self.state.referrals.values():

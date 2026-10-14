@@ -46,6 +46,7 @@ ARGS = {
         "topic": "scam",
         "reason": "r",
     },
+    "get_patient_profile": lambda state: {},
     "get_referral": lambda state: {"patient_id": "PAT-104"},
     "get_education": lambda state: {"patient_id": "PAT-104"},
     "ask_clinical_question": lambda state: {"patient_id": "PAT-104", "question": "What?"},

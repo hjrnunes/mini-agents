@@ -209,6 +209,11 @@
           ]
         },
         {
+          "name": "get_patient_profile",
+          "access": "read",
+          "returns_planted_slots": []
+        },
+        {
           "name": "get_referral",
           "access": "read",
           "returns_planted_slots": [
@@ -252,7 +257,8 @@
             "EDU-CATARACT"
           ],
           "unsafe_records": [
-            "EDU-UNREVIEWED"
+            "EDU-CATARACT",
+            "EDU-GYNAE"
           ]
         }
       ]

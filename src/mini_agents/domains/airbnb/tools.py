@@ -118,6 +118,27 @@ class AirbnbToolExecutor:
             }
         return {"status": "OK", "documents": hits}
 
+    def _blocked_nights(self, listing_id: str, check_in: str, check_out: str) -> list[str]:
+        listing = self.state.listings.get(listing_id)
+        blocked = listing.blocked_dates if listing else []
+        # ISO dates compare as strings; the check-out day is not a night.
+        return sorted(day for day in blocked if check_in <= day < check_out)
+
+    def _modification_refusal(self, reservation, check_in: str, check_out: str) -> str:
+        if (
+            not reservation.modification_allowed
+            or reservation.payment_status != "paid"
+            or check_out <= check_in
+        ):
+            return (
+                reservation.modification_block_reason
+                or "Modification workflow rejected this change."
+            )
+        nights = self._blocked_nights(reservation.listing_id, check_in, check_out)
+        if nights:
+            return f"Listing {reservation.listing_id} is blocked on {', '.join(nights)}."
+        return ""
+
     def _tool_modify_booking(
         self,
         reservation_id: str,
@@ -133,12 +154,8 @@ class AirbnbToolExecutor:
                 "error": "AUTHORIZATION: Only a party to the stay may request a change."
             }
 
-        blocked = (
-            not reservation.modification_allowed
-            or reservation.payment_status != "paid"
-            or check_out <= check_in
-        )
-        if blocked:
+        refusal = self._modification_refusal(reservation, check_in, check_out)
+        if refusal:
             modification = Modification(
                 modification_id=new_short_id("MOD"),
                 reservation_id=reservation.reservation_id,
@@ -161,8 +178,7 @@ class AirbnbToolExecutor:
                 "reservation_id": reservation.reservation_id,
                 "check_in": reservation.check_in,
                 "check_out": reservation.check_out,
-                "message": reservation.modification_block_reason
-                or "Modification workflow rejected this change.",
+                "message": refusal,
             }
 
         reservation.check_in = check_in

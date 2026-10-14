@@ -32,7 +32,10 @@ to catch a wiring gap; imports alone pass.
 
 **Every domain exposes a state summary.** `get_<domain>_state_summary`
 serializes the full ledger. Tests and evaluation grade the ledger through this
-one tool.
+one tool. It is an observer, not an assistant tool: a client that sends
+`X-Mini-Agents-View: assistant` does not see it in `tools/list`
+(`kernel/mcp_server.py`, `_TargetMCP`), while every other client lists it and
+any client can call it by name. Pass each new builder its observer's name.
 
 ## Adding a domain
 
@@ -60,7 +63,8 @@ startup (`--seed-file`). Declare it as a `Slot` in `domains/<name>/seeds.py`
 with the records each executor returns, add the call to the tables in
 `tests/test_seed_slots.py`, and regenerate `tool-manifest.json`. A slot needs
 its carrier tool to return the field in both executors, or the record lists must
-differ the way `occiai.education.script` does. Do not edit
+differ the way `occiai.referral.reason` does. The twin's list holds every safe
+record, so a package seeded for the safe target also runs on the twin. Do not edit
 `tool-manifest.json` by hand.
 
 ## Testing
