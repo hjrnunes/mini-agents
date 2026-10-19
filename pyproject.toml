@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "MiniBank-style MCP evaluation targets for Klarna, Airbnb, and OcciAI."
 requires-python = ">=3.11"
 dependencies = [
+    "httpx>=0.28",
     "mcp[cli]>=1.9.0,<2",
     "pytest>=8.0",
     "starlette",

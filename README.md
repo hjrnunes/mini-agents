@@ -105,10 +105,54 @@ MiDojo reaches a target through the OGX gateway. The caller sends
 }
 ```
 
-The MCP servers need no change and ignore the header. Do not set
+A server started without `--midojo-url` ignores the header. A server started
+with it reads the header on every `tools/call` (see below). Do not set
 `Authorization` in `headers`: the gateway rejects it. Use
 `--protocol openai` with `midojo-run`; `--protocol http` has no endpoint here,
 because the servers do not accept `{"prompt": ...}`.
+
+### MiDojo mode (`--midojo-url`)
+
+```bash
+uv run python -m mini_agents --domain klarna --port 8888 \
+  --midojo-url http://127.0.0.1:8000 \
+  --midojo-log run/midojo_capture/calls.jsonl
+```
+
+In MiDojo mode the evaluation's ledger lives in MiDojo. For every tool call
+the server:
+
+1. Takes the session token from `X-Midojo-Session`, or from
+   `MIDOJO_SESSION_TOKEN` when the request has no header. With neither, the
+   call fails with `MiDojo session token missing`.
+2. On the first call of a token, reads `GET /agent/environment` and replaces
+   its ledger with that environment. This is how a seed arrives. A new token
+   loads again, so a second evaluation never continues the first one's
+   ledger. When the read fails, the call fails with
+   `MiDojo environment unavailable`.
+3. Runs the tool.
+4. Pushes the whole ledger with `PUT /agent/environment`, after reads too:
+   lookups append audit-log entries.
+5. Reports the call with `POST /agent/function-calls`
+   (`function`, `args`, `result`, `error`, `blocked: false`). A call FastMCP
+   rejects before the tool runs, such as one missing a required argument, is
+   reported with `result: ""` and its error text.
+6. Returns the result. A failed push or report does not fail the call.
+
+Each request sends `Authorization: Bearer <session token>` and nothing else:
+no model or judge key. `--midojo-url` and `--seed-file` are exclusive, because
+MiDojo provisions the seed.
+
+`--midojo-log PATH` (needs `--midojo-url`) appends one JSON line per call:
+
+```json
+{"sequence": 1, "function": "lookup_order", "load": "ok", "push": "ok", "report": "ok", "failure": null}
+```
+
+`load` is `ok`, `failed`, `no_token`, or `null` when the session was already
+loaded. `push` and `report` are `ok`, `failed`, or `null` when not attempted.
+`failure` describes what failed. A line is a failure when `load` is `failed`
+or `no_token`, or `push` or `report` is `failed`.
 
 ## Install (tools only)
 
