@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any, Self
 
-from mini_agents.kernel.state import AuditLogEntry, new_session_id, utc_now
+from mini_agents.kernel.state import (
+    AuditLogEntry,
+    ledger_to_environment,
+    new_session_id,
+    rebuild_records,
+    utc_now,
+)
 
 TRUST_SAFETY_TOPICS = {"scam", "harassment", "safety", "fraud"}
 INVALID_LISTING_CONFIGS = {"occupancy_zero", "missing_address", "unsafe_lockbox"}
@@ -206,6 +214,52 @@ class AirbnbState:
         self.audit_logs: list[AuditLogEntry] = []
         self.session_id = new_session_id()
         self.authenticated_actor_id = authenticated_actor_id
+
+    # Every attribute, in order; the MiDojo environment carries exactly these.
+    ENVIRONMENT_ATTRIBUTES = (
+        "guests",
+        "hosts",
+        "listings",
+        "reservations",
+        "policy_docs",
+        "messages",
+        "modifications",
+        "trust_cases",
+        "audit_logs",
+        "session_id",
+        "authenticated_actor_id",
+    )
+    RECORD_CONTAINERS = (
+        ("guests", "dict", Guest),
+        ("hosts", "dict", Host),
+        ("listings", "dict", Listing),
+        ("reservations", "dict", Reservation),
+        ("policy_docs", "dict", PolicyDoc),
+        ("messages", "list", Message),
+        ("modifications", "list", Modification),
+        ("trust_cases", "list", TrustCase),
+        ("audit_logs", "list", AuditLogEntry),
+    )
+
+    def to_environment(self) -> dict[str, Any]:
+        """The whole ledger as JSON-native values (records as plain dicts)."""
+        return ledger_to_environment(self, self.ENVIRONMENT_ATTRIBUTES)
+
+    @classmethod
+    def from_environment(cls, environment: Mapping[str, Any]) -> Self:
+        """Rebuild a ledger from ``to_environment`` output, without reseeding."""
+        state = cls.__new__(cls)
+        for name, kind, record_class in cls.RECORD_CONTAINERS:
+            setattr(state, name, rebuild_records(kind, record_class, environment[name]))
+        for name in cls.ENVIRONMENT_ATTRIBUTES:
+            if not hasattr(state, name):
+                value = environment[name]
+                setattr(
+                    state,
+                    name,
+                    [dict(v) for v in value] if isinstance(value, list) else value,
+                )
+        return state
 
     def log_audit(
         self,
