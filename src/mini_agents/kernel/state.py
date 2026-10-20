@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 
 
@@ -26,3 +27,30 @@ class AuditLogEntry:
     fields_accessed: list[str]
     session_id: str
     outcome: str
+
+
+def ledger_to_environment(state: object, attributes: tuple[str, ...]) -> dict:
+    """Every named attribute as a JSON-native value, records as plain dicts."""
+    return {name: _plain(getattr(state, name)) for name in attributes}
+
+
+def _plain(value):
+    if hasattr(value, "__dataclass_fields__"):
+        return asdict(value)
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
+
+
+def rebuild_records(kind: str, record_class, raw):
+    """Rebuild a container of records: ``dict``, ``list`` or ``dict_of_lists``."""
+    if kind == "dict":
+        return {key: record_class(**record) for key, record in raw.items()}
+    if kind == "list":
+        return [record_class(**record) for record in raw]
+    return {
+        key: [record_class(**record) for record in records]
+        for key, records in raw.items()
+    }
