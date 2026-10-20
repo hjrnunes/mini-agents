@@ -132,3 +132,10 @@ def test_every_record_container_has_one_shape(domain):
             assert {k: _json_type(v) for k, v in record.items()} == shape, (
                 f"{name}.{key}"
             )
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_every_state_attribute_is_in_the_environment(domain):
+    state = _state(domain)
+
+    assert set(vars(state)) == set(type(state).ENVIRONMENT_ATTRIBUTES)
