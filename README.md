@@ -134,7 +134,12 @@ mini-agents-sandbox-agent --domain klarna "Where is my order ORD-101?"
 ```
 
 It prints only the turn's reply on stdout. Diagnostics go to stderr. A failed
-turn prints `mini-agents-sandbox-agent: <reason>: <detail>` and exits 1.
+turn prints `mini-agents-sandbox-agent: <reason>: <detail>` and exits 1, with
+nothing on stdout.
+
+The message is always the last argument, taken literally: `--help`, `-h`,
+`--` or `-x` there is the message, not an option. A single `--` just before
+the message is allowed and dropped. Only a lone `--help` or `-h` prints help.
 
 **First turn** (`MIDOJO_TURN_INDEX` unset or `0`):
 
@@ -160,8 +165,16 @@ turn prints `mini-agents-sandbox-agent: <reason>: <detail>` and exits 1.
    (`--listen-timeout`) for both to listen. If one does not, it stops both
    and the turn fails.
 
-**Later turns** check both PIDs through `/proc/<pid>/stat`. A server that is
-gone fails the turn. The command never restarts one.
+**Later turns** check both PIDs through `/proc/<pid>/stat`. A PID can be
+reused, so the first turn also records each process's identity: its start
+time, field 22 of `/proc/<pid>/stat` (`proc-start:<ticks>`). Without `/proc`
+(macOS, in tests) the identity is the start time from `ps -o lstart=`
+(`ps-lstart:<time>`). A later turn fails with `mcp-server-gone` or `ogx-gone`
+in two cases:
+- the PID no longer runs, or is a zombie;
+- the PID's identity differs from the recorded one, or none was recorded.
+
+The command never restarts a server.
 
 **Every turn** sends one `POST /v1/responses` to OGX with:
 - `model`;
@@ -203,7 +216,7 @@ observes every new workdir file. **Evidence** goes to `/sandbox/workdir/.asago/`
 |---|---|
 | `mcp-calls.jsonl` | by the server (its `--midojo-log`), from the first call on |
 | `ogx.log` | copied from `/tmp/agent-state/ogx.log` after every turn |
-| `run-summary.json` | after every turn, failed ones included |
+| `run-summary.json` | after every run: turns, failed turns and rejected runs |
 
 `run-summary.json` contains:
 - `schema` (`mini-agents-run-summary-v1`), `domain`, `turn_count`, `turns_run`;
@@ -213,16 +226,44 @@ observes every new workdir file. **Evidence** goes to `/sandbox/workdir/.asago/`
 - `exit_reasons`: one per turn;
 - `turns`: per turn, `index`, `reply`, `response_id`, `served_model`,
   `gateway_requests`, `exit_reason` (`ok` or the reason) and `failure` (the
-  detail).
+  detail);
+- `rejected`: the runs refused before they became a turn, with the same
+  fields.
+
+A run is **rejected** when:
+- `MIDOJO_TURN_INDEX` or `MIDOJO_TURN_COUNT` is malformed or out of range
+  (`input-invalid`);
+- a later turn finds no readable state (`state-missing`);
+- the turn does not follow the recorded turns, or is for another domain or
+  count (`turn-out-of-order`).
+
+A rejected run is listed under `rejected`, not in `turns` or `exit_reasons`,
+so it never shifts the index the next turn must have. Its `index` is
+`MIDOJO_TURN_INDEX` (0 when unset), or `null` when that is not an integer.
+
+Where a rejected run is recorded:
+- with readable state, in `state.json` and in the summary;
+- otherwise in the summary only. An existing summary is extended, an
+  unreadable `state.json` is left as it is, and a new summary's `turn_count`
+  is `null` when `MIDOJO_TURN_COUNT` is not an integer.
+
+**Writes are part of the turn.** If `state.json`, `run-summary.json` or the
+`ogx.log` copy cannot be written, the turn fails with `state-write-failed` or
+`evidence-write-failed` and prints no reply, even when OGX answered. The
+command still tries every write. What it can write records the turn under
+that reason, keeping the reply and response ID. When a turn has already
+failed, a write failure is printed as an extra stderr line, and the turn keeps
+its original reason.
 
 | Reason | When |
 |---|---|
 | `input-missing`, `input-invalid` | an input variable is unset, or a turn variable or URL is malformed |
-| `state-missing`, `turn-out-of-order` | a later turn finds no state, or a turn does not follow the recorded ones; nothing is recorded |
-| `process-start-failed` | an interpreter cannot be executed |
+| `state-missing`, `turn-out-of-order` | a later turn finds no readable state, or a turn does not follow the recorded ones; recorded under `rejected` |
+| `state-write-failed`, `evidence-write-failed` | the state, the summary or the OGX log copy cannot be written |
+| `process-start-failed` | an interpreter cannot be executed, or a started process's identity cannot be read |
 | `mcp-server-exited`, `ogx-exited` | the process exits during the first turn before it listens |
 | `mcp-server-not-listening`, `ogx-not-listening` | it runs but does not listen in time |
-| `mcp-server-gone`, `ogx-gone` | a later turn finds the first turn's process gone |
+| `mcp-server-gone`, `ogx-gone` | a later turn finds the first turn's process gone, or its PID held by another process |
 | `gateway-request-failed`, `gateway-response-invalid`, `gateway-response-failed` | OGX does not answer with 2xx, answers without a response ID, or reports the response failed |
 
 The flags `--state-dir`, `--workdir`, `--python-mcp`, `--python-ogx`,
