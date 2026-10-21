@@ -149,7 +149,7 @@ def test_a_ledger_string_that_looks_like_a_placeholder_stops_the_generator(monke
 def test_the_runtime_block_names_the_image_slot_the_agent_command_and_the_policy():
     assert _committed()["runtime"] == {
         "image": "<image_id>",
-        "agent_command": ["mini-agents-sandbox-agent", "--domain", "<domain>"],
+        "agent_command": ["/opt/app-root/.venv/bin/mini-agents-sandbox-agent", "--domain", "<domain>"],
         "policy": sandbox_policy.load_template(),
     }
 

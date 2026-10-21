@@ -28,7 +28,8 @@ BASE_SESSION_ID = "MIDOJO00"
 # the agent command serves. The policy's port slots are in ``sandbox_policy``.
 IMAGE_SLOT = "<image_id>"
 DOMAIN_SLOT = "<domain>"
-AGENT_COMMAND = ("mini-agents-sandbox-agent", "--domain", DOMAIN_SLOT)
+# Absolute: exec under OpenShell ignores the image's ENV, so the venv isn't on PATH.
+AGENT_COMMAND = ("/opt/app-root/.venv/bin/mini-agents-sandbox-agent", "--domain", DOMAIN_SLOT)
 
 # MiDojo rewrites every string in the environment that matches this; ledger
 # text that does would silently become empty.

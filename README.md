@@ -157,7 +157,7 @@ edit `sandbox-policy.json`, then regenerate.
 ```json
 "runtime": {
   "image": "<image_id>",
-  "agent_command": ["mini-agents-sandbox-agent", "--domain", "<domain>"],
+  "agent_command": ["/opt/app-root/.venv/bin/mini-agents-sandbox-agent", "--domain", "<domain>"],
   "policy": { "...": "sandbox-policy.json, port slots unfilled" }
 }
 ```

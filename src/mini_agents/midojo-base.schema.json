@@ -34,7 +34,7 @@
           "description": "What MiDojo execs in /sandbox/workdir as uid 1500, with HOME=/sandbox and without the image's ENV; MiDojo appends the user message. Slot <domain>: the target's key in targets.",
           "type": "array",
           "prefixItems": [
-            { "const": "mini-agents-sandbox-agent" },
+            { "const": "/opt/app-root/.venv/bin/mini-agents-sandbox-agent" },
             { "const": "--domain" },
             { "const": "<domain>" }
           ],

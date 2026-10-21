@@ -3,7 +3,7 @@
   "runtime": {
     "image": "<image_id>",
     "agent_command": [
-      "mini-agents-sandbox-agent",
+      "/opt/app-root/.venv/bin/mini-agents-sandbox-agent",
       "--domain",
       "<domain>"
     ],
