@@ -168,8 +168,9 @@ session was already loaded. `start` and `push` are `ok`, `failed`, or `null`
 when not attempted. `report` is `ok`, `failed`, `unfinished` when the call
 started but was cancelled or interrupted before its report, or `null` when
 the call never started. `failure` describes what failed. A line is a failure
-when `load` is `failed` or `no_token`, `start`, `push` or `report` is
-`failed`, or `report` is `unfinished`.
+when `load` is `failed` or `no_token`, or `start`, `push` or `report` is
+`failed`. A line whose `report` is `unfinished` is not a failure: the call was
+attempted but its outcome is unknown, so a reader treats it as inconclusive.
 
 ## Install (tools only)
 
