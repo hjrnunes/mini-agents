@@ -123,6 +123,114 @@ Not pinned: the Dockerfile frontend (`docker/dockerfile:1`) floats, Debian
 packages (`curl`) follow the bookworm mirror, and the build backends (hatchling for this project, and `langdetect` 1.0.9, which has only an
 sdist) are resolved at build time rather than from the lock.
 
+## Sandbox agent command
+
+`mini-agents-sandbox-agent` runs one turn of a MiDojo `openshell` evaluation
+inside the sandbox image. MiDojo execs it once per turn, with the turn's
+message as the last argument:
+
+```bash
+mini-agents-sandbox-agent --domain klarna "Where is my order ORD-101?"
+```
+
+It prints only the turn's reply on stdout. Diagnostics go to stderr. A failed
+turn prints `mini-agents-sandbox-agent: <reason>: <detail>` and exits 1.
+
+**First turn** (`MIDOJO_TURN_INDEX` unset or `0`):
+
+1. It starts the domain's safe server in MiDojo mode on a free `127.0.0.1`
+   port: `python-mcp -m mini_agents --domain <domain> --host 127.0.0.1
+   --midojo-url "$MIDOJO_URL" --midojo-log /sandbox/workdir/.asago/mcp-calls.jsonl`.
+   The server reads the session token from `MIDOJO_SESSION_TOKEN`.
+2. It writes OGX's config to `/tmp/agent-state/ogx-config.yaml` and starts
+   OGX with `python-ogx -m ogx.cli.ogx run <config> --insecure`. The config
+   holds:
+   - one connector, `<domain>-safe`, pointing at the server's loopback `/sse`;
+   - `server.host: 127.0.0.1`;
+   - inference at `AGENT_MODEL_BASE_URL`, with the key read from
+     `${env.OPENAI_API_KEY}`;
+   - every store under `/tmp/agent-state/ogx`;
+   - no `file_processors`, so OGX attempts no blocked egress.
+
+   The file is JSON, which OGX's YAML loader reads.
+3. Both processes start detached (their own session), with stdin from
+   `/dev/null` and their output to `/tmp/agent-state/mcp-server.log` and
+   `/tmp/agent-state/ogx.log`. Their PIDs and ports go to
+   `/tmp/agent-state/state.json`. The command waits up to 30 s
+   (`--listen-timeout`) for both to listen. If one does not, it stops both
+   and the turn fails.
+
+**Later turns** check both PIDs through `/proc/<pid>/stat`. A server that is
+gone fails the turn. The command never restarts one.
+
+**Every turn** sends one `POST /v1/responses` to OGX with:
+- `model`;
+- the message as `input`;
+- `instructions`;
+- `stream: false`;
+- one `mcp` tool (`server_label: midojo`, the server's loopback URL,
+  `require_approval: never`, no `headers`);
+- from the second turn on, the previous turn's response ID as
+  `previous_response_id`.
+
+This is the body of MiDojo's `OpenAIResponsesAgentClient`, minus the session
+header.
+
+| Input | Use |
+|---|---|
+| `MIDOJO_TURN_INDEX`, `MIDOJO_TURN_COUNT` | this turn, 0-based (default 0), of how many (default 1); the last turn is `count - 1` |
+| `MIDOJO_URL`, `MIDOJO_SESSION_TOKEN` | the control plane and the evaluation's token, for the server only |
+| `AGENT_MODEL` | the request's `model` and OGX's registered model |
+| `AGENT_MODEL_BASE_URL` | orch's model relay as the sandbox reaches it, `http://host.openshell.internal:<port>/<base>` |
+| `AGENT_MODEL_API_KEY` | the relay's placeholder key, passed to OGX as `OPENAI_API_KEY` |
+| `AGENT_INSTRUCTIONS` | the system message, sent as `instructions`; must be set, may be empty |
+
+Every input is required, apart from the two turn variables. A missing one
+fails with `input-missing`.
+
+The command sets the children's environment itself, because exec does not
+apply the image's `ENV`:
+- `PATH` is the venv's `bin` followed by `/usr/local/bin:/usr/bin:/bin`;
+- `TIKTOKEN_CACHE_DIR` is `/opt/app-root/tiktoken`.
+
+OGX's environment has no `MIDOJO_URL` and no `MIDOJO_SESSION_TOKEN`. Both
+servers run with `/tmp/agent-state` as their working directory.
+
+**State** stays in `/tmp/agent-state`, never in the workdir, because MiDojo
+observes every new workdir file. **Evidence** goes to `/sandbox/workdir/.asago/`:
+
+| File | Written |
+|---|---|
+| `mcp-calls.jsonl` | by the server (its `--midojo-log`), from the first call on |
+| `ogx.log` | copied from `/tmp/agent-state/ogx.log` after every turn |
+| `run-summary.json` | after every turn, failed ones included |
+
+`run-summary.json` contains:
+- `schema` (`mini-agents-run-summary-v1`), `domain`, `turn_count`, `turns_run`;
+- `final`: true once the last turn ran;
+- `served_model`: the `model` of the last response;
+- `gateway_request_count`: Responses requests sent to OGX;
+- `exit_reasons`: one per turn;
+- `turns`: per turn, `index`, `reply`, `response_id`, `served_model`,
+  `gateway_requests`, `exit_reason` (`ok` or the reason) and `failure` (the
+  detail).
+
+| Reason | When |
+|---|---|
+| `input-missing`, `input-invalid` | an input variable is unset, or a turn variable or URL is malformed |
+| `state-missing`, `turn-out-of-order` | a later turn finds no state, or a turn does not follow the recorded ones; nothing is recorded |
+| `process-start-failed` | an interpreter cannot be executed |
+| `mcp-server-exited`, `ogx-exited` | the process exits during the first turn before it listens |
+| `mcp-server-not-listening`, `ogx-not-listening` | it runs but does not listen in time |
+| `mcp-server-gone`, `ogx-gone` | a later turn finds the first turn's process gone |
+| `gateway-request-failed`, `gateway-response-invalid`, `gateway-response-failed` | OGX does not answer with 2xx, answers without a response ID, or reports the response failed |
+
+The flags `--state-dir`, `--workdir`, `--python-mcp`, `--python-ogx`,
+`--tiktoken-dir`, `--listen-timeout` and `--request-timeout` override the
+defaults. The defaults are the sandbox contract's paths
+(`/opt/app-root/.venv/bin/python-mcp`, `/opt/app-root/.venv/bin/python-ogx`).
+The tests use the flags to run the command offline, with fakes.
+
 ## Reach a target with a MiDojo session header
 
 MiDojo reaches a target through the OGX gateway. The caller sends
