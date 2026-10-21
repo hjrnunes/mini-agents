@@ -119,8 +119,8 @@ console scripts on `PATH`, writable `$HOME` and `/tmp`.
 | Resolution cutoff | `exclude-newer` in `pyproject.toml` `[tool.uv]` | move the date forward, `uv lock` |
 | `cl100k_base` | the hash tiktoken ships with | bump tiktoken in `uv.lock` |
 
-Not pinned: Debian packages (`curl`) follow the bookworm mirror, and the build
-backends (hatchling for this project, and `langdetect` 1.0.9, which has only an
+Not pinned: the Dockerfile frontend (`docker/dockerfile:1`) floats, Debian
+packages (`curl`) follow the bookworm mirror, and the build backends (hatchling for this project, and `langdetect` 1.0.9, which has only an
 sdist) are resolved at build time rather than from the lock.
 
 ## Reach a target with a MiDojo session header
