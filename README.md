@@ -97,19 +97,99 @@ has no `ENTRYPOINT`: MiDojo runs the agent command with exec.
 ```bash
 docker build -f Dockerfile.sandbox -t asago-mini-agents-sandbox:dev .
 scripts/smoke_sandbox_image.sh asago-mini-agents-sandbox:dev
+IMAGE_ID="$(docker image inspect asago-mini-agents-sandbox:dev --format '{{.Id}}')"
+<midojo venv>/bin/python scripts/smoke_sandbox_openshell.py "$IMAGE_ID"
 ```
 
 The image installs `uv.lock` with `uv sync --frozen --extra gateway`, applies
 `scripts/patch_ogx_streaming.py` (the build fails unless every replacement
-lands), runs as uid 1500 with a writable `$HOME` (`/home/app`) and `/tmp`, and
-holds tiktoken's `cl100k_base` file in `TIKTOKEN_CACHE_DIR`, so nothing
-downloads at run time. The venv `/opt/app-root/.venv/bin` leads `PATH`.
+lands), runs as uid 1500 and holds tiktoken's `cl100k_base` file in
+`/opt/app-root/tiktoken`, so nothing downloads at run time. Under `docker run`
+the venv `/opt/app-root/.venv/bin` leads `PATH`, `HOME` is `/home/app` and the
+working directory is `/sandbox`.
 
-The smoke script runs each check in its own `docker run --rm --network none`
-container, prints `PASS` or `FAIL` per check and exits non-zero on any failure:
-non-root user, tiktoken offline, `import mini_agents`, a klarna server serving
-`/sse` on loopback within 20 seconds, `ogx --help`, every OGX patch marker,
-console scripts on `PATH`, writable `$HOME` and `/tmp`.
+**Identity under OpenShell.** OpenShell takes the image's last `WORKDIR` as
+the sandbox workspace and refuses to start unless the image user can write
+it, so `/sandbox` exists, belongs to `1500:1500` and is the `WORKDIR`. Exec
+runs as uid 1500 with `HOME=/sandbox` and cwd `/sandbox/workdir` (MiDojo
+creates it). **Exec ignores the image's `ENV`**: `PATH` is
+`/usr/local/bin:/usr/bin:/bin:...` and `VIRTUAL_ENV` and `TIKTOKEN_CACHE_DIR`
+are unset. The agent command calls everything by its absolute venv path and
+sets `PATH` and `TIKTOKEN_CACHE_DIR=/opt/app-root/tiktoken` itself. Writable
+are `/sandbox`, `/tmp` and `/dev/shm` (OGX's job workers need a semaphore
+there); `/home/app` is not.
+
+**Interpreter copies.** OpenShell matches an egress rule against the resolved
+executable (`/proc/<pid>/exe`), not argv0, so a symlink or the venv's
+`bin/python` counts as `/usr/local/bin/python3.14`. The image therefore holds
+two real copies of that file in the venv's `bin`, where `pyvenv.cfg` still
+gives them the venv's site-packages:
+
+| Copy | Runs | Egress |
+|---|---|---|
+| `/opt/app-root/.venv/bin/python-mcp` | the domain's MCP server (`python-mcp /opt/app-root/.venv/bin/mini-agents ...`) | MiDojo's control plane |
+| `/opt/app-root/.venv/bin/python-ogx` | OGX (`python-ogx /opt/app-root/.venv/bin/ogx run ...`) | the model relay |
+
+Every other process, the stock interpreter included, reaches nothing.
+
+**Policy template.** `src/mini_agents/sandbox-policy.json` is the OpenShell
+policy (`SandboxSpec.policy`, camelCase proto-JSON) for this image:
+default-deny network, `process` uid and gid `"1500"` (the image has no user
+named `sandbox`), landlock `best_effort`, read-only `/usr`, `/lib`, `/proc`,
+`/dev/urandom`, `/etc`, `/var/log`, `/opt`, and read-write `/sandbox`, `/tmp`,
+`/dev/null`, `/dev/shm`. It has two network rules, each with a port slot:
+
+| Rule | Binary | Endpoint |
+|---|---|---|
+| `control_plane` | `python-mcp` | `host.openshell.internal:<control_plane_port>` |
+| `model_relay` | `python-ogx` | `host.openshell.internal:<relay_port>` |
+
+A slot is a JSON string exactly equal to its name, `"<control_plane_port>"` or
+`"<relay_port>"`; replace the whole value with the port as an integer.
+`mini_agents.kernel.sandbox_policy.fill_policy(control_plane_port=...,
+relay_port=...)` does that and refuses bad ports.
+
+**Runtime block.** `midojo-base.json` carries the template in a top-level
+`runtime` block that every target shares, next to the image and the agent
+command. `scripts/gen_midojo_base.py` copies the policy from the template;
+edit `sandbox-policy.json`, then regenerate.
+
+```json
+"runtime": {
+  "image": "<image_id>",
+  "agent_command": ["mini-agents-sandbox-agent", "--domain", "<domain>"],
+  "policy": { "...": "sandbox-policy.json, port slots unfilled" }
+}
+```
+
+`<image_id>` takes the bare image ID, `sha256:<id>` from
+`docker image inspect <tag> --format '{{.Id}}'`. Never `name@sha256:`: it
+makes OpenShell try a pull. `<domain>` takes the target's key in `targets`;
+MiDojo appends the user message to the agent command.
+
+**Smoke checks.** `scripts/smoke_sandbox_image.sh` runs each check in its own
+`docker run --rm --network none` container, prints `PASS` or `FAIL` per check
+and exits non-zero on any failure: non-root user, tiktoken offline,
+`import mini_agents`, a klarna server serving `/sse` on loopback within 20
+seconds, `ogx --help`, every OGX patch marker, console scripts on `PATH`,
+writable `$HOME` and `/tmp`, `/sandbox` as the `WORKDIR` owned `1500:1500`
+with mode 755, and for each interpreter copy: a regular file (not a symlink)
+that resolves to itself and imports `mini_agents` and `ogx` from the venv with
+an empty environment.
+
+`scripts/smoke_sandbox_openshell.py` checks the image under the running
+OpenShell gateway. Run it with an interpreter that has the OpenShell SDK
+(MiDojo's venv) and pass the bare image ID. It starts two fake HTTP servers on
+host loopback for the control plane and the relay, creates one sandbox from
+the image with the policy template (its slots filled with those ports) and
+checks: uid 1500, `HOME=/sandbox`, cwd `/sandbox/workdir`; writable
+`/sandbox/workdir`, `/tmp` and `/dev/shm`, and a multiprocessing semaphore from
+`python-ogx`; `python-mcp` reaches the control-plane port and is denied the
+relay port, `python-ogx` the reverse, and the stock interpreter is denied
+both; tiktoken's `cl100k_base` loads offline with `TIKTOKEN_CACHE_DIR` set.
+It prints `PASS` or `FAIL` per check, deletes the sandbox and its workspace
+(`ma-smoke-*`) in a `finally`, and exits non-zero on any failure. It makes no
+model call.
 
 | Pin | Where | To bump |
 |---|---|---|
