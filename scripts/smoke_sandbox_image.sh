@@ -56,7 +56,7 @@ check "ogx --help" \
 check "OGX streaming patch present (all replacements)" \
     python -c "
 import sys
-sys.path.insert(0, 'scripts')
+sys.path.insert(0, '/opt/app-root/src/scripts')
 import patch_ogx_streaming as p
 text = p.streaming_path().read_text()
 missing = [i for i, (_, _, marker) in enumerate(p.REPLACEMENTS, 1) if marker not in text]
@@ -69,6 +69,38 @@ check "console scripts on PATH" \
 
 check "writable \$HOME and /tmp" \
     sh -c 'touch "$HOME/.probe" /tmp/.probe && echo "HOME=$HOME"'
+
+# OpenShell needs the WORKDIR writable by the image user, and exec there starts
+# with HOME=/sandbox and without the image's ENV (README "Sandbox image").
+check "WORKDIR is /sandbox, owned 1500:1500, mode 755, writable" \
+    sh -c 'pwd; stat -c "%u:%g %a %F" /sandbox; [ "$(pwd)" = /sandbox ] \
+        && [ "$(stat -c "%u:%g %a %F" /sandbox)" = "1500:1500 755 directory" ] \
+        && touch /sandbox/.probe'
+
+for copy in python-mcp python-ogx; do
+    check "$copy is a regular file, not a symlink, and imports mini_agents and ogx from the venv" \
+        env -i "/opt/app-root/.venv/bin/$copy" -c "
+import importlib.metadata, os, sys
+import mini_agents, ogx
+venv = '/opt/app-root/.venv'
+site = f'{venv}/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages'
+exe = '/opt/app-root/.venv/bin/$copy'
+dist = str(importlib.metadata.distribution('mini-agents').locate_file(''))
+# OpenShell's policy matches this, the resolved executable.
+resolved = os.readlink('/proc/self/exe')
+print('exe', exe, 'resolved', resolved, 'prefix', sys.prefix)
+print('mini_agents', mini_agents.__file__, 'installed in', dist)
+print('ogx', ogx.__file__)
+ok = (
+    os.path.isfile(exe) and not os.path.islink(exe) and os.access(exe, os.X_OK)
+    and resolved == exe
+    and sys.prefix == venv
+    and dist == site
+    and os.path.realpath(ogx.__file__).startswith(site + '/')
+)
+sys.exit(0 if ok else 1)
+"
+done
 
 if [ "$failures" -ne 0 ]; then
     echo "$failures check(s) failed"
