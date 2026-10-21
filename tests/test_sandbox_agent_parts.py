@@ -218,6 +218,18 @@ def test_the_first_turn_sends_no_previous_response_id():
     }
 
 
+def test_allowed_tools_restrict_the_mcp_tool_as_the_garak_path_does():
+    body = request_body(
+        model="m",
+        message="hello",
+        instructions="",
+        mcp_url="http://127.0.0.1:20001/sse",
+        previous_response_id=None,
+        allowed_tools=("lookup_order", "get_account_details"),
+    )
+    assert body["tools"][0]["allowed_tools"] == ["lookup_order", "get_account_details"]
+
+
 def test_a_later_turn_continues_the_previous_response():
     body = request_body(
         model="m",
@@ -587,6 +599,19 @@ def test_each_input_variable_is_required(name):
         cli.read_inputs(environ)
     assert raised.value.reason == failures.INPUT_MISSING
     assert name in raised.value.detail
+
+
+def test_allowed_tools_are_optional_and_read_as_a_comma_separated_list():
+    assert cli.read_inputs(FULL).allowed_tools is None
+    inputs = cli.read_inputs({**FULL, "AGENT_ALLOWED_TOOLS": "lookup_order, get_account_details"})
+    assert inputs.allowed_tools == ("lookup_order", "get_account_details")
+
+
+@pytest.mark.parametrize("value", ["", "lookup_order,", ",lookup_order"])
+def test_a_malformed_tool_list_is_invalid_input(value):
+    with pytest.raises(AgentFailure) as raised:
+        cli.read_inputs({**FULL, "AGENT_ALLOWED_TOOLS": value})
+    assert raised.value.reason == failures.INPUT_INVALID
 
 
 def _main(

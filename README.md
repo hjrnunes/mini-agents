@@ -277,6 +277,7 @@ header.
 | `AGENT_MODEL_BASE_URL` | orch's model relay as the sandbox reaches it, `http://host.openshell.internal:<port>/<base>` |
 | `AGENT_MODEL_API_KEY` | the relay's placeholder key, passed to OGX as `OPENAI_API_KEY` |
 | `AGENT_INSTRUCTIONS` | the system message, sent as `instructions`; must be set, may be empty |
+| `AGENT_ALLOWED_TOOLS` | optional: the comma-separated tools the model may call, sent as the MCP tool's `allowed_tools` as the Garak path does; unset exposes every tool the server serves |
 
 Every input is required, apart from the two turn variables. A missing one
 fails with `input-missing`.

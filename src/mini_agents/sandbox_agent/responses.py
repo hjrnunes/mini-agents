@@ -33,7 +33,11 @@ def request_body(
     instructions: str,
     mcp_url: str,
     previous_response_id: str | None,
+    allowed_tools: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
+    # The package's exposed tools, as the Garak path sends them; None exposes
+    # every tool the server serves.
+    restriction = {"allowed_tools": list(allowed_tools)} if allowed_tools is not None else {}
     continuation = (
         {"previous_response_id": previous_response_id}
         if previous_response_id is not None
@@ -49,6 +53,7 @@ def request_body(
                 "server_label": MCP_SERVER_LABEL,
                 "server_url": mcp_url,
                 "require_approval": "never",
+                **restriction,
             }
         ],
         "stream": False,

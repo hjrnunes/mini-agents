@@ -83,6 +83,8 @@ REQUIRED = (
 # Set, but may be empty: an empty system message is a choice, a missing one a
 # bundle that forgot it.
 INSTRUCTIONS = "AGENT_INSTRUCTIONS"
+# Optional: the comma-separated tools the model may call. Unset exposes them all.
+ALLOWED_TOOLS = "AGENT_ALLOWED_TOOLS"
 
 MCP_LOG = "mcp-server.log"
 OGX_LOG = "ogx.log"
@@ -97,6 +99,7 @@ class Inputs:
     model_base_url: str
     model_api_key: str
     instructions: str
+    allowed_tools: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -155,7 +158,19 @@ def read_inputs(environ: Mapping[str, str]) -> Inputs:
         model_base_url=environ["AGENT_MODEL_BASE_URL"].strip(),
         model_api_key=environ["AGENT_MODEL_API_KEY"],
         instructions=environ[INSTRUCTIONS],
+        allowed_tools=_allowed_tools(environ),
     )
+
+
+def _allowed_tools(environ: Mapping[str, str]) -> tuple[str, ...] | None:
+    if ALLOWED_TOOLS not in environ:
+        return None
+    tools = tuple(name.strip() for name in environ[ALLOWED_TOOLS].split(","))
+    if not all(tools):
+        raise AgentFailure(
+            failures.INPUT_INVALID, f"{ALLOWED_TOOLS} is not a comma-separated list of tool names"
+        )
+    return tools
 
 
 def _warn(failure: AgentFailure) -> None:
@@ -411,6 +426,7 @@ class Agent:
             instructions=inputs.instructions,
             mcp_url=mcp_url(state.mcp.port),
             previous_response_id=state.previous_response_id,
+            allowed_tools=inputs.allowed_tools,
         )
         response = create_response(
             f"http://{LOOPBACK_HOST}:{state.ogx.port}",
