@@ -29,6 +29,7 @@ gateway = [
 [project.scripts]
 mini-agents = "mini_agents.kernel.mcp_server:main"
 mini-agents-stack = "mini_agents.kernel.stack:main"
+mini-agents-sandbox-agent = "mini_agents.sandbox_agent.cli:main"
 
 [build-system]
 requires = ["hatchling"]
