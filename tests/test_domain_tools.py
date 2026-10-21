@@ -3,9 +3,12 @@
 In the sandbox the MCP server's interpreter is the only process allowed to
 reach MiDojo's control plane, which holds the answer key. The model reaches
 that process only through the domain tools, so none of them may run a command,
-open a shell, read or write a file, or make a request to a URL. The tests read
-each server's registered tool list (names, descriptions, argument names), in
-both the safe and the unsafe build.
+open a shell, read or write a file, or make a request to a URL.
+
+The primary guard is ``REVIEWED_TOOLS``: each domain's registered tool list,
+safe and unsafe build, must equal it exactly. A new tool fails the test until
+someone reviews what it can reach and adds it here. The word checks on names,
+descriptions and argument names are a second guard on top.
 """
 
 from __future__ import annotations
@@ -18,6 +21,44 @@ import pytest
 from mini_agents.kernel import mcp_server
 
 DOMAINS = mcp_server.DOMAINS
+
+# Every tool each domain registers, reviewed: none runs a command, opens a
+# shell, touches a file or fetches a URL. Add a tool here only after checking
+# that its executor (tools.py and tools_unsafe.py) works on the ledger alone.
+REVIEWED_TOOLS = {
+    "klarna": {
+        "lookup_order",
+        "get_account_details",
+        "retrieve_policy",
+        "schedule_payment",
+        "process_refund",
+        "escalate_to_human",
+        "get_klarna_state_summary",
+    },
+    "airbnb": {
+        "get_reservation",
+        "get_listing",
+        "check_availability",
+        "lookup_policy",
+        "modify_booking",
+        "update_listing",
+        "moderate_message",
+        "escalate_trust_safety",
+        "get_airbnb_state_summary",
+    },
+    "occiai": {
+        "get_patient_profile",
+        "get_referral",
+        "get_education",
+        "ask_clinical_question",
+        "submit_questionnaire",
+        "summarize_for_ehr",
+        "commit_to_ehr",
+        "generate_education_video",
+        "escalate_to_clinician",
+        "get_occiai_state_summary",
+    },
+}
 
 # Whole words of a tool name (split on "_") or an argument name.
 NAME_WORDS = {
@@ -68,16 +109,53 @@ def _flagged(server) -> dict[str, list[str]]:
     return {tool.name: r for tool in _tools(server) if (r := _reasons(tool))}
 
 
+def _server(domain, unsafe, monkeypatch):
+    monkeypatch.setattr(mcp_server, "UNSAFE_MODE", unsafe)
+    return mcp_server.BUILDERS[domain]()
+
+
+def test_every_domain_has_a_reviewed_tool_list():
+    assert set(REVIEWED_TOOLS) == set(DOMAINS)
+    assert all(REVIEWED_TOOLS[domain] for domain in DOMAINS)
+
+
+@pytest.mark.parametrize("unsafe", [False, True], ids=["safe", "unsafe"])
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_each_domain_registers_exactly_its_reviewed_tools(domain, unsafe, monkeypatch):
+    registered = {tool.name for tool in _tools(_server(domain, unsafe, monkeypatch))}
+
+    assert registered, f"{domain} registers no tools"
+    assert registered == REVIEWED_TOOLS[domain], (
+        f"{domain} tools changed: added {sorted(registered - REVIEWED_TOOLS[domain])}, "
+        f"removed {sorted(REVIEWED_TOOLS[domain] - registered)}. Check that no new "
+        "tool runs a command, touches a file or fetches a URL, then update "
+        "REVIEWED_TOOLS."
+    )
+
+
 @pytest.mark.parametrize("unsafe", [False, True], ids=["safe", "unsafe"])
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_no_domain_tool_executes_commands_touches_files_or_fetches_urls(
     domain, unsafe, monkeypatch
 ):
-    monkeypatch.setattr(mcp_server, "UNSAFE_MODE", unsafe)
-    server = mcp_server.BUILDERS[domain]()
+    server = _server(domain, unsafe, monkeypatch)
 
-    assert len(_tools(server)) > 1
+    assert _tools(server)
     assert _flagged(server) == {}
+
+
+def test_a_neutrally_named_new_tool_fails_the_reviewed_list():
+    server = mcp_server.BUILDERS["klarna"]()
+
+    @server.tool(name="sync_ledger")
+    def sync_ledger(target: str) -> str:
+        """Bring the ledger up to date."""
+        return ""
+
+    assert _flagged(server) == {}
+    assert {tool.name for tool in _tools(server)} - REVIEWED_TOOLS["klarna"] == {
+        "sync_ledger"
+    }
 
 
 def _run_shell_command(command: str) -> str:
