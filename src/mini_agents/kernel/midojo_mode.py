@@ -12,6 +12,12 @@ call with the same ``call_id``, which finishes the started record. A call
 cancelled or interrupted between its start and its report is not finished: it
 stays unfinished in MiDojo.
 
+The tool's own error is FastMCP's ``ToolError``: ``Tool.run`` wraps whatever
+argument validation or the tool function raises in it, and an unknown tool
+name raises it too. Such a call is reported with its error. Anything else that
+escapes, a cancellation or a failure of the framework itself, leaves the call
+unfinished and propagates.
+
 The hook sits at the MCP ``call_tool`` layer. FastMCP registers its low-level
 handler with ``validate_input=False`` and validates arguments inside
 ``Tool.run``, so a call rejected for a missing argument passes through here
@@ -136,11 +142,11 @@ class MidojoBinding:
             raise ToolError(START_FAILED) from exc
         line["start"] = "ok"
         # Until the report overwrites it: a cancellation, or any exception that
-        # is not the tool's own error, leaves the started call unfinished.
+        # is not the tool's own error (a ToolError), leaves the call unfinished.
         line["report"] = "unfinished"
         try:
             result = await invoke(name, arguments)
-        except Exception as exc:
+        except ToolError as exc:
             error = str(exc) or type(exc).__name__
             await self._push_and_report(
                 server, token, call_id, name, arguments, "", error, line

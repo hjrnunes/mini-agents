@@ -140,14 +140,15 @@ the server:
    lookups append audit-log entries.
 6. Finishes the call with `POST /agent/function-calls`
    (`call_id`, `function`, `args`, `result`, `error`, `blocked: false`), with
-   the start's `call_id`. A call FastMCP rejects inside the tool, such as one
-   missing a required argument, and a tool that raises are reported with
-   `result: ""` and their error text.
+   the start's `call_id`. A call with the tool's own error is reported with
+   `result: ""` and its error text: a call FastMCP rejects, such as one
+   missing a required argument or naming an unknown tool, and a tool that
+   raises. FastMCP hands all of these over as a `ToolError`.
 7. Returns the result. A failed push or report does not fail the call.
 
 A call cancelled or interrupted after its start and before its report (an
-`asyncio.CancelledError`, or any exception that is not the tool's own error)
-is not finished: the server stops where it was, sends no finish, and lets the
+`asyncio.CancelledError`, or any exception that is not a `ToolError`, such as
+a failure of the framework itself) is not finished: the server stops where it was, sends no finish, and lets the
 cancellation or exception propagate. MiDojo keeps that call as unfinished
 (`complete: false`).
 

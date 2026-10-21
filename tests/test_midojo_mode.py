@@ -493,23 +493,71 @@ def test_a_call_interrupted_during_the_tool_stays_unfinished(log_path):
     assert line["report"] == "unfinished"
 
 
-def test_a_tool_that_raises_is_still_reported(log_path):
+def test_a_framework_failure_during_the_call_stays_unfinished(monkeypatch, log_path):
+    """Called at ``call_tool``: the low-level handler above it turns any
+    ``Exception`` into an error result, so propagation is checked here."""
+    monkeypatch.setenv(TOKEN_ENV, "tok-1")
     plane = ControlPlane({"tok-1": _klarna_environment("evaluation lamp")})
     server = _server(plane, log_path)
 
+    async def fail(*args, **kwargs):
+        raise RuntimeError("framework broke")
+
+    server._tool_manager.call_tool = fail
+
+    with pytest.raises(RuntimeError, match="framework broke"):
+        asyncio.run(server.call_tool("lookup_order", {"order_id": "ORD-101"}))
+
+    assert plane.finishes() == []
+    assert plane.by_method("PUT") == []
+    (line,) = _log(log_path)
+    assert line["start"] == "ok"
+    assert line["report"] == "unfinished"
+    assert line["failure"] is None
+
+
+def _executor_raises(server):
+    def execute(name, arguments):
+        raise ValueError("ledger on fire")
+
+    server.executor.execute = execute
+    return "lookup_order", {"order_id": "ORD-101"}, "ledger on fire"
+
+
+def _tool_raises(server):
     @server.tool()
     def broken() -> str:
         raise RuntimeError("ledger on fire")
 
-    result = _call(server, "broken", {}, _session("tok-1"))
+    return "broken", {}, "ledger on fire"
+
+
+def _unknown_tool(server):
+    return "no_such_tool", {}, "Unknown tool: no_such_tool"
+
+
+@pytest.mark.parametrize(
+    "arrange",
+    [_executor_raises, _tool_raises, _unknown_tool],
+    ids=["executor-raises", "tool-raises", "unknown-tool"],
+)
+def test_a_tool_error_is_still_reported(arrange, log_path):
+    plane = ControlPlane({"tok-1": _klarna_environment("evaluation lamp")})
+    server = _server(plane, log_path)
+    name, arguments, error = arrange(server)
+
+    result = _call(server, name, arguments, _session("tok-1"))
 
     assert result.isError
+    assert error in result.content[0].text
     assert plane.methods() == ["GET", "POST", "PUT", "POST"]
     (start,) = plane.starts()
     (finish,) = plane.finishes()
     assert finish.body["call_id"] == start.body["call_id"]
+    assert finish.body["function"] == name
+    assert finish.body["args"] == arguments
     assert finish.body["result"] == ""
-    assert "ledger on fire" in finish.body["error"]
+    assert error in finish.body["error"]
     (line,) = _log(log_path)
     assert line["start"] == "ok"
     assert line["push"] == "ok"
