@@ -2,7 +2,9 @@
 
 The consumer compiles a MiDojo suite from this file: ``environment`` is the
 default ledger, ``seed_slots`` name the text fields a probe placeholder can be
-written into, and ``tool_access`` says which tools change the ledger. Run
+written into, and ``tool_access`` says which tools change the ledger. The
+``runtime`` block, shared by every target, names the sandbox image, its
+OpenShell policy template (``sandbox-policy.json``) and the agent command. Run
 ``scripts/gen_midojo_base.py`` after any change to a state, a slot or a tool's
 access entry. ``tests/test_midojo_base.py`` fails while the committed file differs.
 """
@@ -15,11 +17,18 @@ import re
 from pathlib import Path
 from typing import Any
 
-from mini_agents.kernel import mcp_server
+from mini_agents.kernel import mcp_server, sandbox_policy
 
 BASE_SCHEMA_VERSION = "mini-agents-midojo-base-v1"
 BASE_PATH = Path(__file__).resolve().parent.parent / "midojo-base.json"
 BASE_SESSION_ID = "MIDOJO00"
+
+# Slots in the runtime block, filled by the consumer: the bare image ID
+# (``sha256:...``; ``name@sha256:`` makes OpenShell try a pull) and the domain
+# the agent command serves. The policy's port slots are in ``sandbox_policy``.
+IMAGE_SLOT = "<image_id>"
+DOMAIN_SLOT = "<domain>"
+AGENT_COMMAND = ("mini-agents-sandbox-agent", "--domain", DOMAIN_SLOT)
 
 # MiDojo rewrites every string in the environment that matches this; ledger
 # text that does would silently become empty.
@@ -66,9 +75,18 @@ def _target(domain: str) -> dict[str, Any]:
     }
 
 
+def _runtime() -> dict[str, Any]:
+    return {
+        "image": IMAGE_SLOT,
+        "agent_command": list(AGENT_COMMAND),
+        "policy": sandbox_policy.load_template(),
+    }
+
+
 def build_base() -> dict[str, Any]:
     return {
         "schema_version": BASE_SCHEMA_VERSION,
+        "runtime": _runtime(),
         "targets": {domain: _target(domain) for domain in mcp_server.DOMAINS},
     }
 

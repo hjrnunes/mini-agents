@@ -50,11 +50,21 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
     && ls "$TIKTOKEN_CACHE_DIR"
 
-# Docker and Podman sandboxes run as the image's USER.
+# Docker and Podman sandboxes run as the image's USER. OpenShell takes the last
+# WORKDIR as the sandbox workspace and requires the image user to write it, so
+# /sandbox belongs to uid 1500; exec there runs with HOME=/sandbox and without
+# this image's ENV. Its policy matches the resolved executable, so the MCP
+# server and OGX each get a real copy of the interpreter (not a symlink) to
+# carry their own egress rule. Placed in the venv's bin, the copies keep its
+# site-packages through pyvenv.cfg. README "Sandbox image".
 RUN useradd --uid 1500 --user-group --create-home --home-dir /home/app --shell /bin/bash app \
-    && chmod 1777 /tmp
+    && chmod 1777 /tmp \
+    && install -d -o 1500 -g 1500 /sandbox \
+    && cp /usr/local/bin/python3.14 /opt/app-root/.venv/bin/python-mcp \
+    && cp /usr/local/bin/python3.14 /opt/app-root/.venv/bin/python-ogx
 
 USER 1500:1500
 ENV HOME=/home/app
+WORKDIR /sandbox
 
 CMD ["mini-agents", "--help"]

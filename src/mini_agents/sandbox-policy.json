@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "filesystem": {
+    "includeWorkdir": true,
+    "readOnly": [
+      "/usr",
+      "/lib",
+      "/proc",
+      "/dev/urandom",
+      "/etc",
+      "/var/log",
+      "/opt"
+    ],
+    "readWrite": [
+      "/sandbox",
+      "/tmp",
+      "/dev/null",
+      "/dev/shm"
+    ]
+  },
+  "landlock": {
+    "compatibility": "best_effort"
+  },
+  "process": {
+    "runAsUser": "1500",
+    "runAsGroup": "1500"
+  },
+  "networkPolicies": {
+    "control_plane": {
+      "endpoints": [
+        {
+          "host": "host.openshell.internal",
+          "port": "<control_plane_port>"
+        }
+      ],
+      "binaries": [
+        {
+          "path": "/opt/app-root/.venv/bin/python-mcp"
+        }
+      ]
+    },
+    "model_relay": {
+      "endpoints": [
+        {
+          "host": "host.openshell.internal",
+          "port": "<relay_port>"
+        }
+      ],
+      "binaries": [
+        {
+          "path": "/opt/app-root/.venv/bin/python-ogx"
+        }
+      ]
+    }
+  }
+}
