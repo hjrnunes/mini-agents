@@ -1,4 +1,5 @@
-"""The committed midojo-base.json matches the states and the seed slot tables."""
+"""The committed midojo-base.json matches the states, the seed slot tables and
+the sandbox policy template."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from mini_agents.kernel import mcp_server, midojo_base
+from mini_agents.kernel import mcp_server, midojo_base, sandbox_policy
 from mini_agents.kernel.midojo_base import (
     BASE_PATH,
     BASE_SESSION_ID,
@@ -143,3 +144,44 @@ def test_a_ledger_string_that_looks_like_a_placeholder_stops_the_generator(monke
     with pytest.raises(ValueError, match=r"klarna.*environment\.orders\.ORD-101\.item"):
         build_base()
     assert midojo_base.PLACEHOLDER.pattern == r"\{([A-Za-z_]\w*):([A-Za-z_]\w*)\}"
+
+
+def test_the_runtime_block_names_the_image_slot_the_agent_command_and_the_policy():
+    assert _committed()["runtime"] == {
+        "image": "<image_id>",
+        "agent_command": ["mini-agents-sandbox-agent", "--domain", "<domain>"],
+        "policy": sandbox_policy.load_template(),
+    }
+
+
+def test_the_runtime_policy_comes_from_the_template_file(tmp_path, monkeypatch):
+    template = tmp_path / "sandbox-policy.json"
+    template.write_text(json.dumps({"version": 1, "marker": "from the template"}))
+    monkeypatch.setattr(sandbox_policy, "POLICY_PATH", template)
+
+    assert build_base()["runtime"]["policy"] == {
+        "version": 1,
+        "marker": "from the template",
+    }
+
+
+@pytest.mark.parametrize(
+    "path, value",
+    [
+        (("runtime", "extra"), 1),
+        (("runtime", "policy", "extra"), 1),
+        (("runtime", "policy", "networkPolicies", "anything"), {}),
+        (("runtime", "policy", "process", "runAsUser"), "sandbox"),
+        (("runtime", "image"), "asago-mini-agents-sandbox@sha256:0"),
+    ],
+)
+def test_the_schema_refuses_a_changed_runtime_block(path, value):
+    schema = json.loads((PACKAGE / "midojo-base.schema.json").read_text())
+    base = _committed()
+    *parents, key = path
+    node = base
+    for parent in parents:
+        node = node[parent]
+    node[key] = value
+
+    assert not jsonschema.Draft202012Validator(schema).is_valid(base)
