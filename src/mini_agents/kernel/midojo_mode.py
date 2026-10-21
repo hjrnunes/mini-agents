@@ -4,9 +4,13 @@ A server started with ``--midojo-url`` binds the evaluation whose session
 token a call carries (the ``X-Midojo-Session`` header, else
 ``MIDOJO_SESSION_TOKEN``). On that session's first call it loads the
 evaluation's environment as its ledger; a new token loads again, so a second
-evaluation never continues the first one's ledger. After every call, reads
-included (lookups append audit-log entries), it pushes the whole ledger back
-and then reports the call.
+evaluation never continues the first one's ledger. Before the tool runs it
+starts the call in MiDojo under a fresh ``call_id``; a failed start fails the
+call and the tool does not run. After every call, reads included (lookups
+append audit-log entries), it pushes the whole ledger back and then reports the
+call with the same ``call_id``, which finishes the started record. A call
+cancelled or interrupted between its start and its report is not finished: it
+stays unfinished in MiDojo.
 
 The hook sits at the MCP ``call_tool`` layer. FastMCP registers its low-level
 handler with ``validate_input=False`` and validates arguments inside
@@ -14,9 +18,11 @@ handler with ``validate_input=False`` and validates arguments inside
 and is reported with its error text.
 
 With ``--midojo-log``, each call appends one JSON line: ``sequence``,
-``function``, and the outcome of ``load``, ``push`` and ``report`` (``null``
-when not attempted, or for ``load`` when the session was already loaded),
-plus ``failure``. The request carries only the session token.
+``call_id``, ``function``, and the outcome of ``load``, ``start``, ``push``
+and ``report`` (``null`` when not attempted, or for ``load`` when the session
+was already loaded; ``report`` is ``unfinished`` for a started call that never
+reached its report), plus ``failure``. The request carries only the session
+token.
 """
 
 from __future__ import annotations
@@ -24,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -40,9 +47,12 @@ TOKEN_ENV = "MIDOJO_SESSION_TOKEN"
 
 ENVIRONMENT_PATH = "/agent/environment"
 FUNCTION_CALLS_PATH = "/agent/function-calls"
+START_PATH = "/agent/function-calls/start"
+CALL_ID_PREFIX = "mini-agents:"
 TIMEOUT_SECONDS = 30.0
 TOKEN_MISSING = "MiDojo session token missing"
 ENVIRONMENT_UNAVAILABLE = "MiDojo environment unavailable"
+START_FAILED = "MiDojo call start failed"
 _BODY_EXCERPT = 200
 
 
@@ -80,8 +90,10 @@ class MidojoBinding:
             self._sequence += 1
             line: dict[str, Any] = {
                 "sequence": self._sequence,
+                "call_id": None,
                 "function": name,
                 "load": None,
+                "start": None,
                 "push": None,
                 "report": None,
                 "failure": None,
@@ -113,14 +125,31 @@ class MidojoBinding:
                 raise ToolError(ENVIRONMENT_UNAVAILABLE) from exc
             self._token = token
             line["load"] = "ok"
+        call_id = f"{CALL_ID_PREFIX}{uuid.uuid4()}"
+        line["call_id"] = call_id
+        start = {"call_id": call_id, "function": name, "args": arguments}
+        try:
+            await self._request("POST", START_PATH, token, start)
+        except Exception as exc:
+            line["start"] = "failed"
+            line["failure"] = _failure("POST", START_PATH, exc)
+            raise ToolError(START_FAILED) from exc
+        line["start"] = "ok"
+        # Until the report overwrites it: a cancellation, or any exception that
+        # is not the tool's own error, leaves the started call unfinished.
+        line["report"] = "unfinished"
         try:
             result = await invoke(name, arguments)
         except Exception as exc:
             error = str(exc) or type(exc).__name__
-            await self._push_and_report(server, token, name, arguments, "", error, line)
+            await self._push_and_report(
+                server, token, call_id, name, arguments, "", error, line
+            )
             raise
         text = _first_text(result)
-        await self._push_and_report(server, token, name, arguments, text, None, line)
+        await self._push_and_report(
+            server, token, call_id, name, arguments, text, None, line
+        )
         return result
 
     async def _load(self, server: _TargetMCP, token: str) -> None:
@@ -132,6 +161,7 @@ class MidojoBinding:
         self,
         server: _TargetMCP,
         token: str,
+        call_id: str,
         name: str,
         arguments: dict[str, Any],
         result: str,
@@ -147,6 +177,7 @@ class MidojoBinding:
             failures,
         )
         record = {
+            "call_id": call_id,
             "function": name,
             "args": arguments,
             "result": result,

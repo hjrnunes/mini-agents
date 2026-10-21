@@ -1,4 +1,4 @@
-"""MiDojo mode: load the evaluation's ledger, push it after each call, report the call.
+"""MiDojo mode: load the evaluation's ledger, start each call, push the ledger, finish the call.
 
 A fake control plane on ``httpx.MockTransport`` serves ``GET /agent/environment``
 per session token and records every request. Tools are called through the
@@ -21,9 +21,15 @@ from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 
 from mini_agents.kernel import mcp_server
-from mini_agents.kernel.midojo_mode import SESSION_HEADER, TOKEN_ENV, MidojoBinding
+from mini_agents.kernel.midojo_mode import (
+    SESSION_HEADER,
+    START_PATH,
+    TOKEN_ENV,
+    MidojoBinding,
+)
 
 CONTROL_URL = "http://control.test"
+FINISH_PATH = "/agent/function-calls"
 BASE = json.loads(
     (Path(mcp_server.__file__).parent.parent / "midojo-base.json").read_text()
 )
@@ -36,11 +42,15 @@ def _klarna_environment(marker):
 
 
 class ControlPlane:
-    """Records each request; serves one environment per session token."""
+    """Records each request; serves one environment per session token.
 
-    def __init__(self, environments, *, get=200, put=200, post=201):
+    ``post`` is the status of the finishing ``POST /agent/function-calls``;
+    ``start`` is the status of ``POST /agent/function-calls/start``.
+    """
+
+    def __init__(self, environments, *, get=200, put=200, post=201, start=201):
         self.environments = environments
-        self.statuses = {"GET": get, "PUT": put, "POST": post}
+        self.statuses = {"GET": get, "PUT": put, "POST": post, "START": start}
         self.requests = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -53,7 +63,9 @@ class ControlPlane:
                 body=json.loads(request.content) if request.content else None,
             )
         )
-        status = self.statuses[request.method]
+        status = self.statuses[
+            "START" if request.url.path == START_PATH else request.method
+        ]
         if isinstance(status, Exception):
             raise status
         if status >= 400:
@@ -72,6 +84,19 @@ class ControlPlane:
     def by_method(self, method):
         return [request for request in self.requests if request.method == method]
 
+    def by_path(self, method, path):
+        return [
+            request
+            for request in self.requests
+            if request.method == method and request.path == path
+        ]
+
+    def starts(self):
+        return self.by_path("POST", START_PATH)
+
+    def finishes(self):
+        return self.by_path("POST", FINISH_PATH)
+
 
 @pytest.fixture(autouse=True)
 def no_token_in_the_environment(monkeypatch):
@@ -89,30 +114,31 @@ def _server(plane, log_path, domain="klarna"):
     return server
 
 
-def _call(server, name, arguments, headers):
-    async def run():
-        token = request_ctx.set(
-            RequestContext(
-                request_id=1,
-                meta=None,
-                session=None,
-                lifespan_context=None,
-                request=SimpleNamespace(headers=headers),
+async def _handle(server, name, arguments, headers):
+    token = request_ctx.set(
+        RequestContext(
+            request_id=1,
+            meta=None,
+            session=None,
+            lifespan_context=None,
+            request=SimpleNamespace(headers=headers),
+        )
+    )
+    try:
+        handler = server._mcp_server.request_handlers[types.CallToolRequest]
+        result = await handler(
+            types.CallToolRequest(
+                method="tools/call",
+                params=types.CallToolRequestParams(name=name, arguments=arguments),
             )
         )
-        try:
-            handler = server._mcp_server.request_handlers[types.CallToolRequest]
-            result = await handler(
-                types.CallToolRequest(
-                    method="tools/call",
-                    params=types.CallToolRequestParams(name=name, arguments=arguments),
-                )
-            )
-        finally:
-            request_ctx.reset(token)
-        return result.root
+    finally:
+        request_ctx.reset(token)
+    return result.root
 
-    return asyncio.run(run())
+
+def _call(server, name, arguments, headers):
+    return asyncio.run(_handle(server, name, arguments, headers))
 
 
 def _session(token):
@@ -125,6 +151,11 @@ def _lookup(server, token="tok-1", order_id="ORD-101"):
 
 def _log(path):
     return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def _without_call_id(line):
+    assert line["call_id"].startswith("mini-agents:")
+    return {key: value for key, value in line.items() if key != "call_id"}
 
 
 def test_the_first_call_loads_the_ledger_from_the_evaluation(log_path):
@@ -150,7 +181,7 @@ def test_each_domain_loads_its_ledger_from_the_evaluation(domain, log_path):
     result = _call(server, f"get_{domain}_state_summary", {}, _session("tok-1"))
 
     assert json.loads(result.content[0].text)["session_id"] == "EVAL0001"
-    assert plane.methods() == ["GET", "PUT", "POST"]
+    assert plane.methods() == ["GET", "POST", "PUT", "POST"]
 
 
 def test_every_call_pushes_the_ledger_and_then_reports_the_call(log_path):
@@ -159,28 +190,31 @@ def test_every_call_pushes_the_ledger_and_then_reports_the_call(log_path):
 
     result = _lookup(server)
 
-    assert plane.methods() == ["GET", "PUT", "POST"]
+    assert plane.methods() == ["GET", "POST", "PUT", "POST"]
     assert [request.path for request in plane.requests] == [
         "/agent/environment",
+        "/agent/function-calls/start",
         "/agent/environment",
         "/agent/function-calls",
     ]
     assert {request.authorization for request in plane.requests} == {"Bearer tok-1"}
     (put,) = plane.by_method("PUT")
     assert put.body == server.executor.state.to_environment()
-    (post,) = plane.by_method("POST")
+    (post,) = plane.finishes()
     assert post.body == {
+        "call_id": post.body["call_id"],
         "function": "lookup_order",
         "args": {"order_id": "ORD-101"},
         "result": result.content[0].text,
         "error": None,
         "blocked": False,
     }
-    assert _log(log_path) == [
+    assert [_without_call_id(line) for line in _log(log_path)] == [
         {
             "sequence": 1,
             "function": "lookup_order",
             "load": "ok",
+            "start": "ok",
             "push": "ok",
             "report": "ok",
             "failure": None,
@@ -207,11 +241,17 @@ def test_later_calls_of_the_same_session_keep_the_loaded_ledger(log_path):
     _lookup(server)
     _lookup(server)
 
-    assert plane.methods() == ["GET", "PUT", "POST", "PUT", "POST"]
+    assert plane.methods() == ["GET", "POST", "PUT", "POST", "POST", "PUT", "POST"]
     second_put = plane.by_method("PUT")[1]
     assert len(second_put.body["audit_logs"]) == len(loaded["audit_logs"]) + 2
-    assert [line["load"] for line in _log(log_path)] == ["ok", None]
-    assert [line["sequence"] for line in _log(log_path)] == [1, 2]
+    lines = _log(log_path)
+    assert [line["load"] for line in lines] == ["ok", None]
+    assert [line["start"] for line in lines] == ["ok", "ok"]
+    assert [line["sequence"] for line in lines] == [1, 2]
+    call_ids = [line["call_id"] for line in lines]
+    assert len(set(call_ids)) == 2
+    assert [start.body["call_id"] for start in plane.starts()] == call_ids
+    assert [finish.body["call_id"] for finish in plane.finishes()] == call_ids
 
 
 def test_a_new_session_token_reloads_the_ledger(log_path):
@@ -250,6 +290,8 @@ def test_an_unreachable_control_plane_fails_the_call_and_is_logged(refusal, log_
     assert plane.methods() == ["GET"]
     (line,) = _log(log_path)
     assert line["load"] == "failed"
+    assert line["call_id"] is None
+    assert line["start"] is None
     assert line["push"] is None
     assert line["report"] is None
     assert line["failure"]
@@ -267,8 +309,10 @@ def test_a_call_without_a_token_fails_and_is_logged(log_path):
     assert _log(log_path) == [
         {
             "sequence": 1,
+            "call_id": None,
             "function": "lookup_order",
             "load": "no_token",
+            "start": None,
             "push": None,
             "report": None,
             "failure": "MiDojo session token missing",
@@ -283,8 +327,11 @@ def test_a_call_fastmcp_rejects_is_still_reported(log_path):
     result = _call(server, "lookup_order", {}, _session("tok-1"))
 
     assert result.isError
-    assert plane.methods() == ["GET", "PUT", "POST"]
-    (post,) = plane.by_method("POST")
+    assert plane.methods() == ["GET", "POST", "PUT", "POST"]
+    (start,) = plane.starts()
+    assert start.body["args"] == {}
+    (post,) = plane.finishes()
+    assert post.body["call_id"] == start.body["call_id"]
     assert post.body["function"] == "lookup_order"
     assert post.body["args"] == {}
     assert post.body["result"] == ""
@@ -317,11 +364,157 @@ def test_a_rejected_push_is_logged_and_the_call_is_still_reported(log_path):
     result = _lookup(server)
 
     assert not result.isError
-    assert plane.methods() == ["GET", "PUT", "POST"]
+    assert plane.methods() == ["GET", "POST", "PUT", "POST"]
     (line,) = _log(log_path)
     assert line["push"] == "failed"
     assert line["report"] == "ok"
     assert "422" in line["failure"]
+
+
+def test_each_call_starts_before_the_tool_and_finishes_with_the_same_call_id(
+    log_path,
+):
+    plane = ControlPlane({"tok-1": _klarna_environment("evaluation lamp")})
+    server = _server(plane, log_path)
+    seen = []
+    execute = server.executor.execute
+
+    def spy(name, arguments):
+        seen.append([request.path for request in plane.requests])
+        return execute(name, arguments)
+
+    server.executor.execute = spy
+
+    _lookup(server)
+
+    assert seen == [["/agent/environment", "/agent/function-calls/start"]]
+    (start,) = plane.starts()
+    call_id = start.body["call_id"]
+    assert call_id.startswith("mini-agents:")
+    assert start.body == {
+        "call_id": call_id,
+        "function": "lookup_order",
+        "args": {"order_id": "ORD-101"},
+    }
+    assert start.authorization == "Bearer tok-1"
+    (finish,) = plane.finishes()
+    assert finish.body["call_id"] == call_id
+    assert finish.body["function"] == start.body["function"]
+    assert finish.body["args"] == start.body["args"]
+    (line,) = _log(log_path)
+    assert line["call_id"] == call_id
+    assert line["start"] == "ok"
+    assert line["report"] == "ok"
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [409, 500, httpx.ConnectError("connection refused")],
+    ids=["conflict", "server-error", "unreachable"],
+)
+def test_a_failed_start_fails_the_call_and_the_tool_does_not_run(refusal, log_path):
+    plane = ControlPlane(
+        {"tok-1": _klarna_environment("evaluation lamp")}, start=refusal
+    )
+    server = _server(plane, log_path)
+    ran = []
+    server.executor.execute = lambda name, arguments: ran.append(name)
+
+    result = _lookup(server)
+
+    assert result.isError
+    assert "MiDojo call start failed" in result.content[0].text
+    assert ran == []
+    assert [(request.method, request.path) for request in plane.requests] == [
+        ("GET", "/agent/environment"),
+        ("POST", "/agent/function-calls/start"),
+    ]
+    (line,) = _log(log_path)
+    assert line["call_id"] == plane.starts()[0].body["call_id"]
+    assert line["load"] == "ok"
+    assert line["start"] == "failed"
+    assert line["push"] is None
+    assert line["report"] is None
+    assert line["failure"].startswith("POST /agent/function-calls/start: ")
+
+
+def test_a_call_cancelled_during_the_tool_stays_unfinished(log_path):
+    plane = ControlPlane({"tok-1": _klarna_environment("evaluation lamp")})
+    server = _server(plane, log_path)
+    running = asyncio.Event()
+
+    @server.tool()
+    async def hang() -> str:
+        running.set()
+        await asyncio.Event().wait()
+        return "never"
+
+    async def run():
+        call = asyncio.create_task(_handle(server, "hang", {}, _session("tok-1")))
+        await running.wait()
+        call.cancel()
+        await call
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(run())
+
+    assert [(request.method, request.path) for request in plane.requests] == [
+        ("GET", "/agent/environment"),
+        ("POST", "/agent/function-calls/start"),
+    ]
+    (line,) = _log(log_path)
+    assert line["call_id"] == plane.starts()[0].body["call_id"]
+    assert line["start"] == "ok"
+    assert line["push"] is None
+    assert line["report"] == "unfinished"
+    assert line["failure"] is None
+
+
+class Interrupted(BaseException):
+    """Not an ``Exception``: not the tool's own error."""
+
+
+def test_a_call_interrupted_during_the_tool_stays_unfinished(log_path):
+    plane = ControlPlane({"tok-1": _klarna_environment("evaluation lamp")})
+    server = _server(plane, log_path)
+
+    def interrupt(name, arguments):
+        raise Interrupted
+
+    server.executor.execute = interrupt
+
+    with pytest.raises(Interrupted):
+        _lookup(server)
+
+    assert plane.finishes() == []
+    assert plane.by_method("PUT") == []
+    (line,) = _log(log_path)
+    assert line["start"] == "ok"
+    assert line["report"] == "unfinished"
+
+
+def test_a_tool_that_raises_is_still_reported(log_path):
+    plane = ControlPlane({"tok-1": _klarna_environment("evaluation lamp")})
+    server = _server(plane, log_path)
+
+    @server.tool()
+    def broken() -> str:
+        raise RuntimeError("ledger on fire")
+
+    result = _call(server, "broken", {}, _session("tok-1"))
+
+    assert result.isError
+    assert plane.methods() == ["GET", "POST", "PUT", "POST"]
+    (start,) = plane.starts()
+    (finish,) = plane.finishes()
+    assert finish.body["call_id"] == start.body["call_id"]
+    assert finish.body["result"] == ""
+    assert "ledger on fire" in finish.body["error"]
+    (line,) = _log(log_path)
+    assert line["start"] == "ok"
+    assert line["push"] == "ok"
+    assert line["report"] == "ok"
+    assert line["failure"] is None
 
 
 def test_the_header_wins_over_the_environment_variable(monkeypatch, log_path):

@@ -130,14 +130,26 @@ the server:
    loads again, so a second evaluation never continues the first one's
    ledger. When the read fails, the call fails with
    `MiDojo environment unavailable`.
-3. Runs the tool.
-4. Pushes the whole ledger with `PUT /agent/environment`, after reads too:
+3. Starts the call with `POST /agent/function-calls/start`
+   (`call_id`, `function`, `args`). The server makes one `call_id` per call,
+   `mini-agents:<uuid4>`. MiDojo now holds the call as unfinished. When the
+   start fails, the tool does not run and the call fails with
+   `MiDojo call start failed`.
+4. Runs the tool.
+5. Pushes the whole ledger with `PUT /agent/environment`, after reads too:
    lookups append audit-log entries.
-5. Reports the call with `POST /agent/function-calls`
-   (`function`, `args`, `result`, `error`, `blocked: false`). A call FastMCP
-   rejects before the tool runs, such as one missing a required argument, is
-   reported with `result: ""` and its error text.
-6. Returns the result. A failed push or report does not fail the call.
+6. Finishes the call with `POST /agent/function-calls`
+   (`call_id`, `function`, `args`, `result`, `error`, `blocked: false`), with
+   the start's `call_id`. A call FastMCP rejects inside the tool, such as one
+   missing a required argument, and a tool that raises are reported with
+   `result: ""` and their error text.
+7. Returns the result. A failed push or report does not fail the call.
+
+A call cancelled or interrupted after its start and before its report (an
+`asyncio.CancelledError`, or any exception that is not the tool's own error)
+is not finished: the server stops where it was, sends no finish, and lets the
+cancellation or exception propagate. MiDojo keeps that call as unfinished
+(`complete: false`).
 
 Each request sends `Authorization: Bearer <session token>` and nothing else:
 no model or judge key. `--midojo-url` and `--seed-file` are exclusive, because
@@ -146,13 +158,17 @@ MiDojo provisions the seed.
 `--midojo-log PATH` (needs `--midojo-url`) appends one JSON line per call:
 
 ```json
-{"sequence": 1, "function": "lookup_order", "load": "ok", "push": "ok", "report": "ok", "failure": null}
+{"sequence": 1, "call_id": "mini-agents:6f1c2a9e-4b7d-4e2a-9c3f-1d8e5b7a0c42", "function": "lookup_order", "load": "ok", "start": "ok", "push": "ok", "report": "ok", "failure": null}
 ```
 
-`load` is `ok`, `failed`, `no_token`, or `null` when the session was already
-loaded. `push` and `report` are `ok`, `failed`, or `null` when not attempted.
-`failure` describes what failed. A line is a failure when `load` is `failed`
-or `no_token`, or `push` or `report` is `failed`.
+`call_id` is the id sent with the start and the finish, or `null` when no
+start was attempted. `load` is `ok`, `failed`, `no_token`, or `null` when the
+session was already loaded. `start` and `push` are `ok`, `failed`, or `null`
+when not attempted. `report` is `ok`, `failed`, `unfinished` when the call
+started but was cancelled or interrupted before its report, or `null` when
+the call never started. `failure` describes what failed. A line is a failure
+when `load` is `failed` or `no_token`, `start`, `push` or `report` is
+`failed`, or `report` is `unfinished`.
 
 ## Install (tools only)
 
