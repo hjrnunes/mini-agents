@@ -222,6 +222,8 @@ def test_two_turns_start_once_continue_the_response_and_leave_evidence(sandbox):
         assert first.stdout == "reply 1\n"
         started = _state(sandbox)
         assert _running(started["mcp"]["pid"]) and _running(started["ogx"]["pid"])
+        for name in ("mcp", "ogx"):
+            assert started[name]["identity"].startswith(("proc-start:", "ps-lstart:"))
         assert _summary(sandbox)["final"] is False
 
         second = _turn(
@@ -320,6 +322,41 @@ def test_a_process_that_dies_between_turns_fails_the_next_turn(sandbox, victim, 
     summary = _summary(sandbox)
     assert summary["exit_reasons"] == ["ok", reason]
     assert summary["final"] is True
+
+
+def _read_only_state(sandbox):
+    sandbox["state"].chmod(0o500)
+
+
+def _summary_is_a_directory(sandbox):
+    summary = sandbox["workdir"] / ".asago" / "run-summary.json"
+    summary.unlink()
+    summary.mkdir()
+
+
+@pytest.mark.parametrize(
+    ("break_it", "reason"),
+    [(_read_only_state, "state-write-failed"), (_summary_is_a_directory, "evidence-write-failed")],
+)
+def test_a_turn_whose_state_or_evidence_cannot_be_written_fails(sandbox, break_it, reason):
+    with ControlPlane() as plane:
+        first = _turn(
+            sandbox, "hi", _environment(plane.url, sandbox["record"], index=0, count=2)
+        )
+        assert first.returncode == 0, first.stderr
+        break_it(sandbox)
+        try:
+            second = _turn(
+                sandbox, "again", _environment(plane.url, sandbox["record"], index=1, count=2)
+            )
+        finally:
+            sandbox["state"].chmod(0o700)
+
+    assert second.returncode != 0
+    # OGX answered, but the reply is not printed: the turn did not persist.
+    assert len(_lines(sandbox["record"])) == 2
+    assert second.stdout == ""
+    assert f"mini-agents-sandbox-agent: {reason}: " in second.stderr
 
 
 @pytest.mark.parametrize(

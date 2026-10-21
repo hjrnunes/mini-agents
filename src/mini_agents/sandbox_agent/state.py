@@ -19,19 +19,28 @@ VERSION = 1
 
 @dataclass
 class Process:
-    """One detached server: its PID, its loopback port, how it was started."""
+    """One detached server: its PID, its loopback port, how it was started.
+
+    ``identity`` tells this process from a later one that reuses its PID (see
+    ``processes.process_identity``); ``None`` when it could not be read.
+    """
 
     pid: int
     port: int
     command: list[str]
     log: str
+    identity: str | None = None
 
 
 @dataclass
 class Turn:
-    """What one turn produced. ``exit_reason`` is ``ok`` or a named failure."""
+    """What one turn produced. ``exit_reason`` is ``ok`` or a named failure.
 
-    index: int
+    ``index`` is ``None`` only for a rejected run whose ``MIDOJO_TURN_INDEX``
+    is not an integer.
+    """
+
+    index: int | None
     reply: str | None
     response_id: str | None
     served_model: str | None
@@ -42,12 +51,18 @@ class Turn:
 
 @dataclass
 class AgentState:
+    """``turns`` holds the runs accepted as turns, in order; ``rejected`` the
+    runs refused before they became one (a bad turn variable, a turn out of
+    order), which never shift the next turn's expected index. ``turn_count``
+    is ``None`` only in a summary of a rejected run whose count is unreadable."""
+
     domain: str
-    turn_count: int
+    turn_count: int | None
     mcp: Process | None = None
     ogx: Process | None = None
     previous_response_id: str | None = None
     turns: list[Turn] = field(default_factory=list)
+    rejected: list[Turn] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {"version": VERSION, **asdict(self)}
@@ -63,6 +78,7 @@ class AgentState:
             ogx=Process(**data["ogx"]) if data.get("ogx") else None,
             previous_response_id=data.get("previous_response_id"),
             turns=[Turn(**turn) for turn in data.get("turns", [])],
+            rejected=[Turn(**turn) for turn in data.get("rejected", [])],
         )
 
 

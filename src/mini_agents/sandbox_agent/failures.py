@@ -10,6 +10,8 @@ START_FAILED = "process-start-failed"
 GATEWAY_REQUEST_FAILED = "gateway-request-failed"
 GATEWAY_RESPONSE_INVALID = "gateway-response-invalid"
 GATEWAY_RESPONSE_FAILED = "gateway-response-failed"
+STATE_WRITE_FAILED = "state-write-failed"
+EVIDENCE_WRITE_FAILED = "evidence-write-failed"
 
 # Per process ("mcp-server", "ogx"): see ``not_listening`` and friends.
 MCP_SERVER = "mcp-server"
@@ -27,7 +29,8 @@ def exited(name: str) -> str:
 
 
 def gone(name: str) -> str:
-    """A later turn found the process from the first turn no longer running."""
+    """A later turn found the process from the first turn no longer running,
+    or its PID now held by another process."""
     return f"{name}-gone"
 
 

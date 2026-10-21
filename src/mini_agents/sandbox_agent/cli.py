@@ -4,8 +4,12 @@ The first turn (``MIDOJO_TURN_INDEX`` unset or 0) starts the domain's safe
 server and OGX; a later turn checks both still run and fails with a named
 reason when one is gone, never restarting it. Every turn sends one Responses
 request, records it in the state file and the run summary, copies OGX's log
-into the workdir, and prints only the reply on stdout. Diagnostics go to
+into the workdir, and prints only the reply on stdout. A turn whose state or
+evidence cannot be written fails, and prints no reply. Diagnostics go to
 stderr as ``mini-agents-sandbox-agent: <reason>: <detail>``.
+
+The message is always the last argument, taken literally: ``--help``, ``-h``,
+``--`` or ``-x`` there is a message, not an option.
 """
 
 from __future__ import annotations
@@ -29,11 +33,13 @@ from mini_agents.sandbox_agent.ogx_config import (
     write_ogx_config,
 )
 from mini_agents.sandbox_agent.processes import (
+    Identity,
     Liveness,
     free_ports,
     mcp_command,
     ogx_command,
     pid_alive,
+    process_identity,
     start_detached,
     stop,
     wait_listening,
@@ -45,11 +51,14 @@ from mini_agents.sandbox_agent.state import (
     Turn,
     load_state,
     save_state,
+    state_path,
 )
 from mini_agents.sandbox_agent.summary import (
     MCP_CALLS,
     copy_ogx_log,
     evidence_dir,
+    record_rejection,
+    summary_path,
     write_run_summary,
 )
 
@@ -78,6 +87,7 @@ INSTRUCTIONS = "AGENT_INSTRUCTIONS"
 MCP_LOG = "mcp-server.log"
 OGX_LOG = "ogx.log"
 OGX_CONFIG = "ogx-config.yaml"
+HELP_FLAGS = ("-h", "--help")
 
 
 @dataclass(frozen=True)
@@ -101,19 +111,30 @@ class Settings:
     request_timeout: float = REQUEST_TIMEOUT
 
 
+def _turn_variable(environ: Mapping[str, str], name: str, default: int) -> int:
+    raw = environ.get(name, "").strip()
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        raise AgentFailure(
+            failures.INPUT_INVALID, f"{name} is not an integer: {raw!r}"
+        ) from None
+
+
+def _turn_variable_or_none(
+    environ: Mapping[str, str], name: str, default: int
+) -> int | None:
+    try:
+        return _turn_variable(environ, name, default)
+    except AgentFailure:
+        return None
+
+
 def read_turn(environ: Mapping[str, str]) -> tuple[int, int]:
     """``(index, count)``; an unset index is the first turn, an unset count 1."""
 
-    values = {}
-    for name, default in ((TURN_INDEX, 0), (TURN_COUNT, 1)):
-        raw = environ.get(name, "").strip()
-        try:
-            values[name] = int(raw) if raw else default
-        except ValueError:
-            raise AgentFailure(
-                failures.INPUT_INVALID, f"{name} is not an integer: {raw!r}"
-            ) from None
-    index, count = values[TURN_INDEX], values[TURN_COUNT]
+    index = _turn_variable(environ, TURN_INDEX, 0)
+    count = _turn_variable(environ, TURN_COUNT, 1)
     if count < 1 or not 0 <= index < count:
         raise AgentFailure(
             failures.INPUT_INVALID,
@@ -137,20 +158,36 @@ def read_inputs(environ: Mapping[str, str]) -> Inputs:
     )
 
 
-class Agent:
-    """Runs one turn. ``alive`` checks a PID from an earlier turn."""
+def _warn(failure: AgentFailure) -> None:
+    print(f"{PROG}: {failure.reason}: {failure.detail}", file=sys.stderr)
 
-    def __init__(self, settings: Settings, *, alive: Liveness = pid_alive):
+
+class Agent:
+    """Runs one turn. ``alive`` and ``identity`` check a PID from an earlier
+    turn: it must run and still be the process the first turn started."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        alive: Liveness = pid_alive,
+        identity: Identity = process_identity,
+    ):
         self.settings = settings
         self.alive = alive
+        self.identity = identity
+        self._loaded: AgentState | None = None
 
     @property
     def evidence(self) -> Path:
         return evidence_dir(self.settings.workdir)
 
     def run(self, message: str, environ: Mapping[str, str]) -> str:
-        index, count = read_turn(environ)
-        state = self._state_for(index, count)
+        try:
+            state, index = self._accept(environ)
+        except AgentFailure as failure:
+            self._reject(failure, environ)
+            raise
         try:
             inputs = read_inputs(environ)
             if index == 0:
@@ -159,36 +196,40 @@ class Agent:
                 self._check_running(state)
             turn = self._send(state, inputs, message, index)
         except AgentFailure as failure:
-            self._record(
-                state,
-                Turn(
-                    index=index,
-                    reply=None,
-                    response_id=None,
-                    served_model=None,
-                    gateway_requests=failure.gateway_requests,
-                    exit_reason=failure.reason,
-                    failure=failure.detail,
-                ),
+            failed = Turn(
+                index=index,
+                reply=None,
+                response_id=None,
+                served_model=None,
+                gateway_requests=failure.gateway_requests,
+                exit_reason=failure.reason,
+                failure=failure.detail,
             )
+            try:
+                self._record(state, failed)
+            except AgentFailure as unwritten:
+                _warn(unwritten)
             raise
         state.previous_response_id = turn.response_id
         self._record(state, turn)
         return turn.reply or ""
 
-    def _state_for(self, index: int, count: int) -> AgentState:
-        """This turn's state; a turn that does not follow the last fails here
-        and records nothing."""
+    def _accept(self, environ: Mapping[str, str]) -> tuple[AgentState, int]:
+        """This run's turn and its state. A run that is not the next turn
+        fails here and is recorded as rejected, not as a turn."""
 
+        path = state_path(self.settings.state_dir)
         try:
-            state = load_state(self.settings.state_dir)
+            self._loaded = load_state(self.settings.state_dir)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise AgentFailure(
-                failures.STATE_MISSING, f"unreadable state file: {exc}"
+                failures.STATE_MISSING, f"unreadable state file {path}: {exc}"
             ) from exc
+        index, count = read_turn(environ)
+        state = self._loaded
         if state is None:
             if index == 0:
-                return AgentState(domain=self.settings.domain, turn_count=count)
+                return AgentState(domain=self.settings.domain, turn_count=count), 0
             raise AgentFailure(
                 failures.STATE_MISSING,
                 f"turn {index} found no state in {self.settings.state_dir}; "
@@ -205,13 +246,56 @@ class Agent:
                 f"turn {index} is for {self.settings.domain} of {count} turns; "
                 f"the state is for {state.domain} of {state.turn_count}",
             )
-        return state
+        return state, index
+
+    def _reject(self, failure: AgentFailure, environ: Mapping[str, str]) -> None:
+        """Record a rejected run: in the state when it could be read, else in
+        the summary alone, leaving an unreadable state file untouched.
+
+        Its index is ``MIDOJO_TURN_INDEX`` when that is an integer, else
+        ``None``.
+        """
+
+        rejected = Turn(
+            index=_turn_variable_or_none(environ, TURN_INDEX, 0),
+            reply=None,
+            response_id=None,
+            served_model=None,
+            gateway_requests=0,
+            exit_reason=failure.reason,
+            failure=failure.detail,
+        )
+        if self._loaded is not None:
+            self._loaded.rejected.append(rejected)
+            unwritten = self._persist(self._loaded)
+        else:
+            try:
+                record_rejection(
+                    self.settings.workdir,
+                    domain=self.settings.domain,
+                    turn_count=_turn_variable_or_none(environ, TURN_COUNT, 1),
+                    rejected=rejected,
+                )
+                unwritten = None
+            except OSError as exc:
+                unwritten = AgentFailure(
+                    failures.EVIDENCE_WRITE_FAILED,
+                    f"{summary_path(self.settings.workdir)}: {exc}",
+                )
+        if unwritten is not None:
+            _warn(unwritten)
 
     def _start(self, state: AgentState, inputs: Inputs, environ: Mapping[str, str]) -> None:
         settings = self.settings
         state_dir = settings.state_dir
-        state_dir.mkdir(parents=True, exist_ok=True)
-        self.evidence.mkdir(parents=True, exist_ok=True)
+        for reason, directory in (
+            (failures.STATE_WRITE_FAILED, state_dir),
+            (failures.EVIDENCE_WRITE_FAILED, self.evidence),
+        ):
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise AgentFailure(reason, f"{directory}: {exc}") from exc
         venv_bin = settings.python_mcp.parent
         mcp_port, ogx_port = free_ports(2)
         try:
@@ -225,7 +309,12 @@ class Agent:
             )
         except ValueError as exc:
             raise AgentFailure(failures.INPUT_INVALID, str(exc)) from exc
-        config_path = write_ogx_config(config, state_dir / OGX_CONFIG)
+        try:
+            config_path = write_ogx_config(config, state_dir / OGX_CONFIG)
+        except OSError as exc:
+            raise AgentFailure(
+                failures.STATE_WRITE_FAILED, f"{state_dir / OGX_CONFIG}: {exc}"
+            ) from exc
 
         started = []
         try:
@@ -262,12 +351,29 @@ class Agent:
                 # relative path may land in the observed workdir.
                 process = start_detached(command, env=env, log=log, cwd=state_dir, name=name)
                 started.append((name, process, port, log))
-                record = Process(pid=process.pid, port=port, command=command, log=str(log))
+                identity = self.identity(process.pid)
+                if identity is None and process.poll() is None:
+                    raise AgentFailure(
+                        failures.START_FAILED,
+                        f"{name}: cannot read the identity of pid {process.pid}",
+                    )
+                record = Process(
+                    pid=process.pid,
+                    port=port,
+                    command=command,
+                    log=str(log),
+                    identity=identity,
+                )
                 if name == failures.MCP_SERVER:
                     state.mcp = record
                 else:
                     state.ogx = record
-                save_state(state, state_dir)
+                try:
+                    save_state(state, state_dir)
+                except OSError as exc:
+                    raise AgentFailure(
+                        failures.STATE_WRITE_FAILED, f"{state_path(state_dir)}: {exc}"
+                    ) from exc
             deadline = time.monotonic() + settings.listen_timeout
             for name, process, port, log in started:
                 wait_listening(process, port=port, name=name, deadline=deadline, log=log)
@@ -286,6 +392,14 @@ class Agent:
                 raise AgentFailure(
                     failures.gone(name),
                     f"pid {process.pid} from the first turn is no longer running; "
+                    f"see {process.log}",
+                )
+            current = self.identity(process.pid)
+            if process.identity is None or current != process.identity:
+                raise AgentFailure(
+                    failures.gone(name),
+                    f"pid {process.pid} is no longer the process the first turn "
+                    f"started (identity {current!r}, recorded {process.identity!r}); "
                     f"see {process.log}",
                 )
 
@@ -313,26 +427,68 @@ class Agent:
             exit_reason="ok",
         )
 
+    def _persist(self, state: AgentState) -> AgentFailure | None:
+        """Save the state, rewrite the summary, copy OGX's log. Each is tried
+        even when an earlier one fails; the result names the first failure."""
+
+        settings = self.settings
+        problems: list[tuple[str, str]] = []
+        for reason, path, write in (
+            (
+                failures.STATE_WRITE_FAILED,
+                state_path(settings.state_dir),
+                lambda: save_state(state, settings.state_dir),
+            ),
+            (
+                failures.EVIDENCE_WRITE_FAILED,
+                summary_path(settings.workdir),
+                lambda: write_run_summary(state, settings.workdir),
+            ),
+            (
+                failures.EVIDENCE_WRITE_FAILED,
+                self.evidence / OGX_LOG,
+                lambda: copy_ogx_log(settings.state_dir / OGX_LOG, settings.workdir),
+            ),
+        ):
+            try:
+                write()
+            except OSError as exc:
+                problems.append((reason, f"{path}: {exc}"))
+        if not problems:
+            return None
+        return AgentFailure(problems[0][0], "; ".join(detail for _, detail in problems))
+
     def _record(self, state: AgentState, turn: Turn) -> None:
-        """Save the turn, rewrite the summary, copy OGX's log. A failure to
-        write evidence is reported but never replaces the turn's outcome."""
+        """Append the turn and persist it. When a write fails, the turn takes
+        that failure (an ``ok`` turn becomes the write's reason) and whatever
+        can still be written says so; then the failure is raised."""
 
         state.turns.append(turn)
-        try:
-            save_state(state, self.settings.state_dir)
-            write_run_summary(state, self.settings.workdir)
-            copy_ogx_log(self.settings.state_dir / OGX_LOG, self.settings.workdir)
-        except OSError as exc:
-            print(f"{PROG}: evidence not written: {exc}", file=sys.stderr)
+        unwritten = self._persist(state)
+        if unwritten is None:
+            return
+        if turn.exit_reason == "ok":
+            turn.exit_reason = unwritten.reason
+            turn.failure = unwritten.detail
+        else:
+            turn.failure = f"{turn.failure}; {unwritten.reason}: {unwritten.detail}"
+        self._persist(state)
+        raise unwritten
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=PROG,
+        usage="%(prog)s --domain DOMAIN [options] MESSAGE",
         description=(
             "Run one turn of a MiDojo openshell evaluation: start or reuse the "
             "domain's safe MCP server and OGX, send the message, print the reply."
         ),
+        epilog=(
+            "MESSAGE is the last argument, taken literally even when it looks "
+            "like an option ('--help', '-x', '--')."
+        ),
+        allow_abbrev=False,
     )
     parser.add_argument("--domain", required=True, choices=DOMAINS)
     parser.add_argument("--state-dir", type=Path, default=STATE_DIR)
@@ -342,17 +498,28 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--tiktoken-dir", type=Path, default=TIKTOKEN_DIR)
     parser.add_argument("--listen-timeout", type=float, default=LISTEN_TIMEOUT)
     parser.add_argument("--request-timeout", type=float, default=REQUEST_TIMEOUT)
-    parser.add_argument("message", help="this turn's message (the last argument)")
     return parser
 
 
-def _message_last(argv: Sequence[str]) -> list[str]:
-    """Take the last argument as the message even when it starts with '-'."""
+def parse_args(argv: Sequence[str]) -> argparse.Namespace:
+    """Options from every argument but the last; the last is the message.
 
+    Only a lone ``-h`` or ``--help`` asks for help. One ``--`` just before the
+    message is accepted and dropped.
+    """
+
+    parser = _parser()
     argv = list(argv)
-    if argv and "--" not in argv and argv[-1] not in ("-h", "--help"):
-        argv.insert(len(argv) - 1, "--")
-    return argv
+    if len(argv) == 1 and argv[0] in HELP_FLAGS:
+        parser.parse_args(argv)  # prints the help and exits 0
+    if not argv:
+        parser.error("the message (the last argument) is missing")
+    options, message = argv[:-1], argv[-1]
+    if options and options[-1] == "--":
+        options = options[:-1]
+    args = parser.parse_args(options)
+    args.message = message
+    return args
 
 
 def main(
@@ -360,8 +527,9 @@ def main(
     environ: Mapping[str, str] | None = None,
     *,
     alive: Liveness = pid_alive,
+    identity: Identity = process_identity,
 ) -> int:
-    args = _parser().parse_args(_message_last(sys.argv[1:] if argv is None else argv))
+    args = parse_args(sys.argv[1:] if argv is None else argv)
     settings = Settings(
         domain=args.domain,
         state_dir=args.state_dir,
@@ -373,11 +541,11 @@ def main(
         request_timeout=args.request_timeout,
     )
     try:
-        reply = Agent(settings, alive=alive).run(
+        reply = Agent(settings, alive=alive, identity=identity).run(
             args.message, os.environ if environ is None else environ
         )
     except AgentFailure as failure:
-        print(f"{PROG}: {failure.reason}: {failure.detail}", file=sys.stderr)
+        _warn(failure)
         return 1
     sys.stdout.write(reply + "\n")
     sys.stdout.flush()

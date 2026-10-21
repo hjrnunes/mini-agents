@@ -28,6 +28,7 @@ from mini_agents.sandbox_agent.processes import (
     mcp_command,
     ogx_command,
     pid_alive,
+    process_identity,
     start_detached,
     stop,
     wait_listening,
@@ -40,7 +41,12 @@ from mini_agents.sandbox_agent.state import (
     load_state,
     save_state,
 )
-from mini_agents.sandbox_agent.summary import copy_ogx_log, run_summary, write_run_summary
+from mini_agents.sandbox_agent.summary import (
+    copy_ogx_log,
+    record_rejection,
+    run_summary,
+    write_run_summary,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 RELAY = "http://host.openshell.internal:18006/v1"
@@ -159,8 +165,10 @@ def _state():
     return AgentState(
         domain="klarna",
         turn_count=2,
-        mcp=Process(pid=11, port=20001, command=["python-mcp"], log="/s/mcp-server.log"),
-        ogx=Process(pid=12, port=20002, command=["python-ogx"], log="/s/ogx.log"),
+        mcp=Process(
+            pid=11, port=20001, command=["python-mcp"], log="/s/mcp-server.log", identity="id-11"
+        ),
+        ogx=Process(pid=12, port=20002, command=["python-ogx"], log="/s/ogx.log", identity="id-12"),
         previous_response_id="resp-1",
         turns=[Turn(0, "reply 1", "resp-1", "served/m", 1, "ok")],
     )
@@ -414,10 +422,12 @@ def test_a_process_that_exits_before_listening_fails_at_once(tmp_path):
     assert "exited with 7" in raised.value.detail
 
 
-def _proc(tmp_path, pid, state):
+def _proc(tmp_path, pid, state, start=987654):
+    """A fake /proc entry: fields 4-21 are their own numbers, field 22 ``start``."""
     entry = tmp_path / "proc" / str(pid)
     entry.mkdir(parents=True)
-    (entry / "stat").write_text(f"{pid} (python-ogx (x)) {state} 1 {pid} {pid} 0\n")
+    middle = " ".join(str(field) for field in range(4, 22))
+    (entry / "stat").write_text(f"{pid} (python-ogx (x)) {state} {middle} {start} 23 24\n")
     return tmp_path / "proc"
 
 
@@ -515,6 +525,7 @@ def test_the_summary_lists_each_turn_and_the_totals():
                 "failure": "pid 12 is gone",
             },
         ],
+        "rejected": [],
     }
 
 
@@ -578,7 +589,15 @@ def test_each_input_variable_is_required(name):
     assert name in raised.value.detail
 
 
-def _main(tmp_path, environ, *args, alive=pid_alive):
+def _main(
+    tmp_path,
+    environ,
+    *args,
+    message="hello",
+    alive=lambda pid: True,
+    identity=lambda pid: f"id-{pid}",
+):
+    """Run one turn in-process; by default the state's PIDs 11 and 12 pass."""
     return cli.main(
         [
             "--domain",
@@ -592,10 +611,11 @@ def _main(tmp_path, environ, *args, alive=pid_alive):
             "--python-ogx",
             str(tmp_path / "no-python-ogx"),
             *args,
-            "hello",
+            message,
         ],
         environ,
         alive=alive,
+        identity=identity,
     )
 
 
@@ -612,17 +632,84 @@ def test_a_missing_input_variable_fails_the_turn_before_anything_starts(tmp_path
     assert summary["gateway_request_count"] == 0
 
 
-def test_a_later_turn_without_state_fails(tmp_path, capsys):
+def _summary(tmp_path):
+    return json.loads((tmp_path / "workdir" / ".asago" / "run-summary.json").read_text())
+
+
+def test_a_later_turn_without_state_fails_and_is_recorded_as_rejected(tmp_path, capsys):
     assert _main(tmp_path, {**FULL, "MIDOJO_TURN_INDEX": "1", "MIDOJO_TURN_COUNT": "2"}) == 1
     assert "mini-agents-sandbox-agent: state-missing: " in capsys.readouterr().err
-    assert not (tmp_path / "workdir" / ".asago").exists()
+    assert not (tmp_path / "agent-state").exists()
+    summary = _summary(tmp_path)
+    assert summary["turns"] == [] and summary["exit_reasons"] == []
+    assert summary["turn_count"] == 2 and summary["final"] is False
+    (rejected,) = summary["rejected"]
+    assert (rejected["index"], rejected["exit_reason"]) == (1, "state-missing")
 
 
-def test_a_turn_out_of_order_fails_and_records_nothing(tmp_path, capsys):
+def test_a_turn_out_of_order_fails_and_is_recorded_as_rejected(tmp_path, capsys):
     save_state(_state(), tmp_path / "agent-state")
     assert _main(tmp_path, {**FULL, "MIDOJO_TURN_INDEX": "0", "MIDOJO_TURN_COUNT": "2"}) == 1
     assert "mini-agents-sandbox-agent: turn-out-of-order: " in capsys.readouterr().err
-    assert load_state(tmp_path / "agent-state") == _state()
+    state = load_state(tmp_path / "agent-state")
+    assert state.turns == _state().turns
+    assert [(t.index, t.exit_reason) for t in state.rejected] == [(0, "turn-out-of-order")]
+    summary = _summary(tmp_path)
+    assert summary["exit_reasons"] == ["ok"]
+    assert [r["exit_reason"] for r in summary["rejected"]] == ["turn-out-of-order"]
+
+
+def test_a_rejected_run_does_not_shift_the_next_turn(tmp_path, monkeypatch, capsys):
+    save_state(_state(), tmp_path / "agent-state")
+    assert _main(tmp_path, {**FULL, "MIDOJO_TURN_INDEX": "5", "MIDOJO_TURN_COUNT": "2"}) == 1
+    _answer(monkeypatch)
+    assert _main(tmp_path, {**FULL, "MIDOJO_TURN_INDEX": "1", "MIDOJO_TURN_COUNT": "2"}) == 0
+    summary = _summary(tmp_path)
+    assert summary["exit_reasons"] == ["ok", "ok"]
+    assert [(r["index"], r["exit_reason"]) for r in summary["rejected"]] == [(5, "input-invalid")]
+
+
+def test_an_unparseable_turn_index_is_recorded_with_no_index(tmp_path, capsys):
+    save_state(_state(), tmp_path / "agent-state")
+    assert _main(tmp_path, {**FULL, "MIDOJO_TURN_INDEX": "two", "MIDOJO_TURN_COUNT": "2"}) == 1
+    assert "mini-agents-sandbox-agent: input-invalid: MIDOJO_TURN_INDEX" in capsys.readouterr().err
+    (rejected,) = _summary(tmp_path)["rejected"]
+    assert rejected["index"] is None
+    assert rejected["exit_reason"] == "input-invalid"
+    assert load_state(tmp_path / "agent-state").turns == _state().turns
+
+
+def test_an_unreadable_state_is_left_alone_and_the_summary_extended(tmp_path, capsys):
+    write_run_summary(_state(), tmp_path / "workdir")
+    state_file = tmp_path / "agent-state" / "state.json"
+    state_file.parent.mkdir()
+    state_file.write_text("{not json")
+    assert _main(tmp_path, {**FULL, "MIDOJO_TURN_INDEX": "1", "MIDOJO_TURN_COUNT": "x"}) == 1
+    assert "mini-agents-sandbox-agent: state-missing: unreadable state file" in (
+        capsys.readouterr().err
+    )
+    assert state_file.read_text() == "{not json"
+    summary = _summary(tmp_path)
+    assert summary["exit_reasons"] == ["ok"]
+    assert [(r["index"], r["exit_reason"]) for r in summary["rejected"]] == [(1, "state-missing")]
+
+
+def test_a_rejection_without_any_summary_starts_one(tmp_path):
+    rejected = Turn(None, None, None, None, 0, "input-invalid", "bad")
+    path = record_rejection(tmp_path, domain="klarna", turn_count=None, rejected=rejected)
+    summary = json.loads(path.read_text())
+    assert summary["turn_count"] is None and summary["final"] is False
+    assert summary["rejected"] == [
+        {
+            "index": None,
+            "reply": None,
+            "response_id": None,
+            "served_model": None,
+            "gateway_requests": 0,
+            "exit_reason": "input-invalid",
+            "failure": "bad",
+        }
+    ]
 
 
 def test_a_later_turn_checks_both_pids_with_the_liveness_check(tmp_path, capsys):
@@ -646,3 +733,183 @@ def test_the_console_script_is_declared():
         project["project"]["scripts"]["mini-agents-sandbox-agent"]
         == "mini_agents.sandbox_agent.cli:main"
     )
+
+
+def _answer(monkeypatch, sent=None):
+    """Stand in for OGX in-process: answer every request as turn 2."""
+
+    def create(url, body, *, timeout):
+        if sent is not None:
+            sent.append(body)
+        return {
+            "id": "resp-2",
+            "model": "served/m",
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "reply 2"}]}
+            ],
+        }
+
+    monkeypatch.setattr(cli, "create_response", create)
+
+
+SECOND = {**FULL, "MIDOJO_TURN_INDEX": "1", "MIDOJO_TURN_COUNT": "2"}
+
+
+# Process identity
+
+
+def test_identity_is_the_start_time_in_proc(tmp_path):
+    root = _proc(tmp_path, 41, "S", start=555)
+    assert process_identity(41, proc_root=root) == "proc-start:555"
+    assert process_identity(43, proc_root=root) is None
+    (root / "44").mkdir()
+    (root / "44" / "stat").write_text("44 (short) S 1\n")
+    assert process_identity(44, proc_root=root) is None
+
+
+def test_identity_falls_back_to_ps_without_proc(tmp_path):
+    root = tmp_path / "no-proc"
+    mine = process_identity(os.getpid(), proc_root=root)
+    assert mine is not None and mine.startswith("ps-lstart:")
+    assert process_identity(os.getpid(), proc_root=root) == mine
+    process = subprocess.Popen([sys.executable, "-c", "pass"])
+    process.wait()
+    assert process_identity(process.pid, proc_root=root) is None
+
+
+@pytest.mark.parametrize(("pid", "reason"), [(11, "mcp-server-gone"), (12, "ogx-gone")])
+def test_a_reused_pid_fails_the_turn_with_the_named_reason(tmp_path, capsys, pid, reason):
+    save_state(_state(), tmp_path / "agent-state")
+
+    def identity(checked):
+        return f"id-{checked}" if checked != pid else "id-someone-else"
+
+    assert _main(tmp_path, SECOND, alive=lambda checked: True, identity=identity) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.startswith(
+        f"mini-agents-sandbox-agent: {reason}: pid {pid} is no longer the process "
+        "the first turn started"
+    )
+    assert _summary(tmp_path)["exit_reasons"] == ["ok", reason]
+
+
+def test_a_live_pid_with_another_start_time_is_gone(tmp_path, capsys):
+    """The real checks: this test's own PID runs, but did not start as recorded."""
+
+    state = _state()
+    state.mcp.pid = os.getpid()
+    state.mcp.identity = "ps-lstart:Thu Jan  1 00:00:00 1970"
+    save_state(state, tmp_path / "agent-state")
+    assert (
+        _main(tmp_path, SECOND, alive=pid_alive, identity=process_identity) == 1
+    )
+    assert f"mcp-server-gone: pid {os.getpid()} is no longer the process" in (
+        capsys.readouterr().err
+    )
+
+
+def test_a_pid_recorded_without_identity_is_gone(tmp_path, capsys):
+    state = _state()
+    state.ogx.identity = None
+    save_state(state, tmp_path / "agent-state")
+    assert _main(tmp_path, SECOND, alive=lambda pid: True) == 1
+    assert "mini-agents-sandbox-agent: ogx-gone: pid 12 " in capsys.readouterr().err
+
+
+# Writes that fail
+
+
+def _unwritable(monkeypatch, name):
+    def fail(*args, **kwargs):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(cli, name, fail)
+
+
+def test_a_successful_turn_prints_the_reply_and_records_it(tmp_path, monkeypatch, capsys):
+    save_state(_state(), tmp_path / "agent-state")
+    _answer(monkeypatch)
+    assert _main(tmp_path, SECOND) == 0
+    assert capsys.readouterr() == ("reply 2\n", "")
+    state = load_state(tmp_path / "agent-state")
+    assert state.previous_response_id == "resp-2"
+    assert _summary(tmp_path)["final"] is True
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        ("save_state", "state-write-failed"),
+        ("write_run_summary", "evidence-write-failed"),
+        ("copy_ogx_log", "evidence-write-failed"),
+    ],
+)
+def test_a_turn_whose_writes_fail_fails_without_a_reply(
+    tmp_path, monkeypatch, capsys, name, reason
+):
+    save_state(_state(), tmp_path / "agent-state")
+    (tmp_path / "agent-state" / "ogx.log").write_text("ogx\n")
+    _answer(monkeypatch)
+    _unwritable(monkeypatch, name)
+    assert _main(tmp_path, SECOND) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.startswith(f"mini-agents-sandbox-agent: {reason}: ")
+    assert "No space left on device" in err
+    # What could still be written says the turn failed, and keeps its reply.
+    if name == "save_state":
+        turn = _summary(tmp_path)["turns"][-1]
+        assert (turn["exit_reason"], turn["reply"]) == (reason, "reply 2")
+    else:
+        turn = load_state(tmp_path / "agent-state").turns[-1]
+        assert (turn.exit_reason, turn.reply, turn.response_id) == (reason, "reply 2", "resp-2")
+
+
+def test_a_failed_turn_whose_writes_fail_names_both(tmp_path, monkeypatch, capsys):
+    save_state(_state(), tmp_path / "agent-state")
+    _unwritable(monkeypatch, "write_run_summary")
+    assert _main(tmp_path, SECOND, alive=lambda pid: pid != 12) == 1
+    err = capsys.readouterr().err.splitlines()
+    assert err[0].startswith("mini-agents-sandbox-agent: evidence-write-failed: ")
+    assert err[1].startswith("mini-agents-sandbox-agent: ogx-gone: pid 12 ")
+    turn = load_state(tmp_path / "agent-state").turns[-1]
+    assert turn.exit_reason == "ogx-gone"
+    assert "evidence-write-failed" in turn.failure
+
+
+# The message argument
+
+
+@pytest.mark.parametrize("message", ["--help", "-h", "--", "-x", "--domain"])
+def test_the_last_argument_is_the_message_whatever_it_looks_like(
+    tmp_path, monkeypatch, capsys, message
+):
+    save_state(_state(), tmp_path / "agent-state")
+    sent = []
+    _answer(monkeypatch, sent)
+    assert _main(tmp_path, SECOND, message=message) == 0
+    assert capsys.readouterr() == ("reply 2\n", "")
+    assert [body["input"] for body in sent] == [message]
+
+
+def test_a_double_dash_before_the_message_is_dropped():
+    args = cli.parse_args(["--domain", "airbnb", "--", "-x"])
+    assert (args.domain, args.message) == ("airbnb", "-x")
+    args = cli.parse_args(["--domain", "airbnb", "--", "--"])
+    assert args.message == "--"
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+def test_a_lone_help_flag_prints_help(flag, capsys):
+    with pytest.raises(SystemExit) as raised:
+        cli.parse_args([flag])
+    assert raised.value.code == 0
+    assert "usage: mini-agents-sandbox-agent --domain DOMAIN" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("argv", [[], ["hello"], ["--domain", "klarna"]])
+def test_a_missing_domain_or_message_is_a_usage_error(argv, capsys):
+    with pytest.raises(SystemExit) as raised:
+        cli.parse_args(argv)
+    assert raised.value.code == 2

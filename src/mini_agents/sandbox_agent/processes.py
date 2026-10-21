@@ -5,7 +5,9 @@ Each server starts in its own session (``setsid``) with stdin from
 sandbox's exec waits for the child and hangs. A detached child outlives the
 command and is re-parented, so a later turn has only its PID; the image has
 no ``ps``, so liveness reads ``/proc/<pid>/stat``, and falls back to
-``kill(pid, 0)`` where there is no ``/proc`` (macOS, in tests).
+``kill(pid, 0)`` where there is no ``/proc`` (macOS, in tests). A PID alone
+can be reused, so the first turn also records the process's start time and a
+later turn requires the same one.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ POLL_SECONDS = 0.2
 STOP_SECONDS = 5.0
 
 Liveness = Callable[[int], bool]
+Identity = Callable[[int], str | None]
 
 
 def mcp_command(
@@ -156,6 +159,35 @@ def pid_alive(pid: int, proc_root: Path = PROC_ROOT) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def process_identity(pid: int, proc_root: Path = PROC_ROOT) -> str | None:
+    """What tells the process holding ``pid`` from a later one reusing it.
+
+    With ``/proc``, the start time in clock ticks since boot (field 22 of
+    ``/proc/<pid>/stat``); without, the start time ``ps`` reports (macOS, in
+    tests). ``None`` when neither can be read, e.g. the process is gone.
+    """
+
+    if proc_root.is_dir():
+        try:
+            stat = (proc_root / str(pid) / "stat").read_text(encoding="utf-8")
+        except OSError:
+            return None
+        # Field 3 (state) is the first after the comm; field 22 is 19 later.
+        fields = stat.rpartition(")")[2].split()
+        return f"proc-start:{fields[19]}" if len(fields) > 19 else None
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    started = result.stdout.strip()
+    return f"ps-lstart:{started}" if result.returncode == 0 and started else None
 
 
 def stop(process: subprocess.Popen, *, timeout: float = STOP_SECONDS) -> None:
