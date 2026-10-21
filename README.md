@@ -80,12 +80,48 @@ evaluator that connects without the header reads the ledger as before.
 Without Docker:
 
 ```bash
-uv sync
-uv pip install 'ogx[starter]' openai
+uv sync --extra gateway
 uv run mini-agents-stack
 ```
 
-`mini-agents-stack --mcp-only` starts the six SSE servers and skips OGX.
+The `gateway` extra installs OGX from `uv.lock` (Python 3.12 or newer). A bare
+`uv sync` removes it. `mini-agents-stack --mcp-only` starts the six SSE servers
+and skips OGX.
+
+## Sandbox image
+
+`Dockerfile.sandbox` builds the image MiDojo's openshell runtime runs a domain
+in. One image serves every domain; the agent command's arguments pick it. It
+has no `ENTRYPOINT`: MiDojo runs the agent command with exec.
+
+```bash
+docker build -f Dockerfile.sandbox -t asago-mini-agents-sandbox:dev .
+scripts/smoke_sandbox_image.sh asago-mini-agents-sandbox:dev
+```
+
+The image installs `uv.lock` with `uv sync --frozen --extra gateway`, applies
+`scripts/patch_ogx_streaming.py` (the build fails unless every replacement
+lands), runs as uid 1500 with a writable `$HOME` (`/home/app`) and `/tmp`, and
+holds tiktoken's `cl100k_base` file in `TIKTOKEN_CACHE_DIR`, so nothing
+downloads at run time. The venv `/opt/app-root/.venv/bin` leads `PATH`.
+
+The smoke script runs each check in its own `docker run --rm --network none`
+container, prints `PASS` or `FAIL` per check and exits non-zero on any failure:
+non-root user, tiktoken offline, `import mini_agents`, a klarna server serving
+`/sse` on loopback within 20 seconds, `ogx --help`, every OGX patch marker,
+console scripts on `PATH`, writable `$HOME` and `/tmp`.
+
+| Pin | Where | To bump |
+|---|---|---|
+| `python:3.14.8-slim-bookworm` | `Dockerfile.sandbox`, manifest-list digest | `docker buildx imagetools inspect python:<tag>`; replace tag, version and digest |
+| `ghcr.io/astral-sh/uv:0.10.4` | `Dockerfile.sandbox`, manifest-list digest | the same, for `ghcr.io/astral-sh/uv:<version>` |
+| Python packages, `ogx[starter]==1.3.1`, `ogx-api==1.4.0` | `uv.lock`; OGX in the `gateway` extra of `pyproject.toml` | edit `pyproject.toml`, `uv lock`, then check the patch script still applies every replacement to a fresh `uv sync --extra gateway` |
+| Resolution cutoff | `exclude-newer` in `pyproject.toml` `[tool.uv]` | move the date forward, `uv lock` |
+| `cl100k_base` | the hash tiktoken ships with | bump tiktoken in `uv.lock` |
+
+Not pinned: the Dockerfile frontend (`docker/dockerfile:1`) floats, Debian
+packages (`curl`) follow the bookworm mirror, and the build backends (hatchling for this project, and `langdetect` 1.0.9, which has only an
+sdist) are resolved at build time rather than from the lock.
 
 ## Reach a target with a MiDojo session header
 

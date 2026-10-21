@@ -1,0 +1,10 @@
+# Build context for Dockerfile.sandbox (BuildKit reads this file instead of
+# .dockerignore): only what the image copies.
+*
+!pyproject.toml
+!uv.lock
+!src
+!scripts
+!ogx-config.yaml
+**/__pycache__
+**/*.pyc

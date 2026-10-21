@@ -11,6 +11,21 @@ dependencies = [
     "uvicorn",
 ]
 
+[project.optional-dependencies]
+# OGX Responses gateway. ogx is pinned to the release that
+# scripts/patch_ogx_streaming.py fits; ogx-api to the one it was verified with.
+# OGX needs Python 3.12 or newer; the marker keeps the project floor at 3.11.
+gateway = [
+    "ogx[starter]==1.3.1; python_version >= '3.12'",
+    "ogx-api==1.4.0; python_version >= '3.12'",
+    "openai",
+    "botocore",
+    "chardet",
+    "sqlite-vec",
+    "pypdf",
+    "markitdown",
+]
+
 [project.scripts]
 mini-agents = "mini_agents.kernel.mcp_server:main"
 mini-agents-stack = "mini_agents.kernel.stack:main"
@@ -24,3 +39,11 @@ packages = ["src/mini_agents"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+# A fixed cutoff, so the lock does not depend on each host's uv config. Move
+# it forward to admit newer releases, then `uv lock`.
+exclude-newer = "2026-10-14T13:27:17Z"
+# magika caps onnxruntime at 1.20.1 on Windows only; without this the universal
+# lock applies that cap everywhere, and 1.20.1 has no CPython 3.14 wheel.
+constraint-dependencies = ["onnxruntime>=1.21; sys_platform != 'win32'"]

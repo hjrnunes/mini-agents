@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1
+#
+# Sandbox image for MiDojo's openshell runtime. One image serves every domain;
+# the agent command's arguments pick the domain. No ENTRYPOINT: MiDojo runs the
+# agent command with exec. Pins and how to bump them: README "Sandbox image".
+#
+#   docker build -f Dockerfile.sandbox -t asago-mini-agents-sandbox:dev .
+#   scripts/smoke_sandbox_image.sh asago-mini-agents-sandbox:dev
+
+# uv 0.10.4, ghcr.io/astral-sh/uv:0.10.4, manifest list (linux/amd64, linux/arm64).
+FROM ghcr.io/astral-sh/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac AS uv
+
+# CPython 3.14.8, python:3.14.8-slim-bookworm, manifest list (linux/amd64,
+# linux/arm64, ...). OGX needs 3.12 or newer.
+FROM python:3.14.8-slim-bookworm@sha256:44e000a07b48bef1517a2b14adc93c17af728ca98858b5e24c6e1b18de1b2ef2
+
+# curl for readiness checks. Debian packages follow the bookworm mirror.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=uv /uv /usr/local/bin/uv
+
+ENV UV_PROJECT_ENVIRONMENT=/opt/app-root/.venv \
+    UV_PYTHON=/usr/local/bin/python3 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    VIRTUAL_ENV=/opt/app-root/.venv \
+    PATH=/opt/app-root/.venv/bin:$PATH \
+    TIKTOKEN_CACHE_DIR=/opt/app-root/tiktoken
+
+WORKDIR /opt/app-root/src
+
+COPY pyproject.toml uv.lock ogx-config.yaml ./
+COPY src ./src
+COPY scripts ./scripts
+
+# One sync, not a dependencies layer plus a project layer: uv 0.10.4 does not
+# match nvidia-cusparselt-cu13's manylinux2014_sbsa tag on arm64 and reinstalls
+# it on every sync. The cache mount keeps rebuilds fast instead.
+# Then patch OGX and fail the build unless every replacement landed, and
+# recompile the patched module. tiktoken checks the downloaded cl100k_base file
+# against the hash it ships with.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --extra gateway \
+    && python scripts/patch_ogx_streaming.py \
+    && python -c "import sys; sys.path.insert(0, 'scripts'); import patch_ogx_streaming as p; text = p.streaming_path().read_text(); missing = [i for i, (_, _, m) in enumerate(p.REPLACEMENTS, 1) if m not in text]; sys.exit(f'OGX patch missing replacements {missing}' if missing else 0)" \
+    && python -m compileall -q "$(python -c "import sys; sys.path.insert(0, 'scripts'); import patch_ogx_streaming as p; print(p.streaming_path())")" \
+    && python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
+    && ls "$TIKTOKEN_CACHE_DIR"
+
+# Docker and Podman sandboxes run as the image's USER.
+RUN useradd --uid 1500 --user-group --create-home --home-dir /home/app --shell /bin/bash app \
+    && chmod 1777 /tmp
+
+USER 1500:1500
+ENV HOME=/home/app
+
+CMD ["mini-agents", "--help"]
