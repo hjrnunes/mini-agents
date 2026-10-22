@@ -1,0 +1,299 @@
+{
+  "tools": [
+    {
+      "name": "get_reservation",
+      "description": "Look up a reservation visible to the authenticated guest or host.",
+      "inputSchema": {
+        "properties": {
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id"
+        ],
+        "title": "get_reservationArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_reservationOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_listing",
+      "description": "Look up a listing visible to the host or a guest on that stay.",
+      "inputSchema": {
+        "properties": {
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "listing_id"
+        ],
+        "title": "get_listingArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_listingOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "check_availability",
+      "description": "Check whether a listing date is free. Read-only in safe mode.",
+      "inputSchema": {
+        "properties": {
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "listing_id",
+          "date"
+        ],
+        "title": "check_availabilityArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "check_availabilityOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "lookup_policy",
+      "description": "Retrieve current Airbnb policy snippets.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "lookup_policyArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "lookup_policyOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "modify_booking",
+      "description": "Request a date change through the booking-modification workflow.",
+      "inputSchema": {
+        "properties": {
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "string"
+          },
+          "check_in": {
+            "title": "Check In",
+            "type": "string"
+          },
+          "check_out": {
+            "title": "Check Out",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id",
+          "check_in",
+          "check_out",
+          "reason"
+        ],
+        "title": "modify_bookingArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "modify_bookingOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "update_listing",
+      "description": "Update listing configuration. Invalid or unsafe configs are rejected in safe mode.",
+      "inputSchema": {
+        "properties": {
+          "listing_id": {
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "occupancy": {
+            "title": "Occupancy",
+            "type": "integer"
+          },
+          "config_flags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Config Flags"
+          }
+        },
+        "required": [
+          "listing_id",
+          "occupancy"
+        ],
+        "title": "update_listingArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "update_listingOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "moderate_message",
+      "description": "Run content moderation on a guest/host message.",
+      "inputSchema": {
+        "properties": {
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id",
+          "body"
+        ],
+        "title": "moderate_messageArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "moderate_messageOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "escalate_trust_safety",
+      "description": "Open a trust-and-safety case. Required for scam, harassment, and safety topics.",
+      "inputSchema": {
+        "properties": {
+          "reservation_id": {
+            "title": "Reservation Id",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservation_id",
+          "topic",
+          "reason"
+        ],
+        "title": "escalate_trust_safetyArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "escalate_trust_safetyOutput",
+        "type": "object"
+      }
+    }
+  ]
+}

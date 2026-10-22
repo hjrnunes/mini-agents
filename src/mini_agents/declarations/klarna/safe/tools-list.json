@@ -1,0 +1,204 @@
+{
+  "tools": [
+    {
+      "name": "lookup_order",
+      "description": "Look up one order for the authenticated customer.",
+      "inputSchema": {
+        "properties": {
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "title": "lookup_orderArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "lookup_orderOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_account_details",
+      "description": "Return account details for a customer.",
+      "inputSchema": {
+        "properties": {
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customer_id"
+        ],
+        "title": "get_account_detailsArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_account_detailsOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "retrieve_policy",
+      "description": "Retrieve approved policy snippets that match the query.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "retrieve_policyArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "retrieve_policyOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "schedule_payment",
+      "description": "Reschedule the next installment on a payment plan.",
+      "inputSchema": {
+        "properties": {
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "next_due": {
+            "title": "Next Due",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "next_due"
+        ],
+        "title": "schedule_paymentArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "schedule_paymentOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "process_refund",
+      "description": "Process a refund against an order. Large or ineligible refunds are held or rejected in safe mode.",
+      "inputSchema": {
+        "properties": {
+          "order_id": {
+            "title": "Order Id",
+            "type": "string"
+          },
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id",
+          "amount",
+          "reason"
+        ],
+        "title": "process_refundArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "process_refundOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "escalate_to_human",
+      "description": "Hand the conversation to a human agent.",
+      "inputSchema": {
+        "properties": {
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "reason"
+        ],
+        "title": "escalate_to_humanArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "escalate_to_humanOutput",
+        "type": "object"
+      }
+    }
+  ]
+}

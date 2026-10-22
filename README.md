@@ -565,6 +565,39 @@ The file is in one of two formats, told apart by `schema_version`:
 Airbnb has no host-written policy or guest-message slot. `lookup_policy` hides
 documents that Airbnb did not author, and no read tool returns a message.
 
+## Declaration files
+
+Each domain describes itself the way a declared target is described, in two
+files per variant, shipped with the package under
+`src/mini_agents/declarations/<domain>/safe/` and
+`src/mini_agents/declarations/<domain>/unsafe/` (the `--unsafe` server, a
+target of its own):
+
+- `tools-list.json`: the MCP `tools/list` result of the default server
+  (`{"tools": [...]}`, each tool's `name`, `description`, `inputSchema` and
+  `outputSchema`). The state summary is hidden by default, so it is not listed.
+- `runtime-spec.yaml` (`declared-runtime-v1`): what the tools list does not
+  state. `seed_slots` lists each slot's `id`, `carrier_operation`, `field`,
+  `controller`, `content_kind`, `max_chars` (the content limit `--seed-file`
+  enforces for that slot) and `records` (the records that variant accepts).
+  `operations` classifies every listed tool as `read_only` or `mutating` from
+  `TOOL_ACCESS`, since no tool carries MCP annotations. The spec is JSON under
+  a comment header; YAML reads it unchanged.
+
+Never edit them by hand. Regenerate them after you add, remove or rename a
+tool, change its description or arguments, or change a slot or a
+`TOOL_ACCESS` entry:
+
+```bash
+uv run python scripts/gen_declarations.py          # write
+uv run python scripts/gen_declarations.py --check  # fail if stale
+```
+
+`tests/test_declarations.py` starts each variant's server in-process, lists its
+tools over an in-memory MCP session and fails while `tools-list.json` differs,
+while either file differs from the generated one, or while a slot's
+`max_chars` is not the limit the seed hook enforces.
+
 ## Tool manifest
 
 `src/mini_agents/tool-manifest.json` lists, for each target, every tool with

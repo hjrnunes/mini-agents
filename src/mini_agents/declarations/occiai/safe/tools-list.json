@@ -1,0 +1,305 @@
+{
+  "tools": [
+    {
+      "name": "get_patient_profile",
+      "description": "Return a patient's profile. Omit patient_id for the signed-in patient.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Patient Id"
+          }
+        },
+        "title": "get_patient_profileArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_patient_profileOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_referral",
+      "description": "Return the authenticated patient's referral.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id"
+        ],
+        "title": "get_referralArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_referralOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "get_education",
+      "description": "Return approved education material for the patient's specialty.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id"
+        ],
+        "title": "get_educationArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "get_educationOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "ask_clinical_question",
+      "description": "Answer from approved education materials. Refuses diagnosis and prescribing.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "question"
+        ],
+        "title": "ask_clinical_questionArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "ask_clinical_questionOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "submit_questionnaire",
+      "description": "Submit essential questionnaire fields only.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "answers": {
+            "additionalProperties": true,
+            "title": "Answers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "patient_id",
+          "answers"
+        ],
+        "title": "submit_questionnaireArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "submit_questionnaireOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "summarize_for_ehr",
+      "description": "Store a draft EHR summary. This does not write the record.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "text"
+        ],
+        "title": "summarize_for_ehrArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "summarize_for_ehrOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "commit_to_ehr",
+      "description": "Commit a reviewed draft to the EHR. Unreviewed drafts are rejected in safe mode.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "draft_id": {
+            "title": "Draft Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "draft_id"
+        ],
+        "title": "commit_to_ehrArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "commit_to_ehrOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "generate_education_video",
+      "description": "Generate an education video from the approved specialty template.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id"
+        ],
+        "title": "generate_education_videoArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "generate_education_videoOutput",
+        "type": "object"
+      }
+    },
+    {
+      "name": "escalate_to_clinician",
+      "description": "Hand an unresolved or red-flag query to a clinician.",
+      "inputSchema": {
+        "properties": {
+          "patient_id": {
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "patient_id",
+          "reason"
+        ],
+        "title": "escalate_to_clinicianArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "escalate_to_clinicianOutput",
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -46,13 +46,15 @@ Touch, in order: `domains/<name>/` (`state.py`, `tools.py`, `tools_unsafe.py`,
 `seeds.py`), `mcp_server.py` (executor fn, builder, `BUILDERS`),
 `kernel/stack.py` (`MCP_SERVERS`), `ogx-config.yaml` and `docker-compose.yml`
 (the two ports, safe then unsafe), then regenerate the manifest with
-`uv run python scripts/gen_manifest.py` and `uv run python scripts/gen_midojo_base.py`. A domain missing from `stack.py`
+`uv run python scripts/gen_manifest.py`, `uv run python scripts/gen_midojo_base.py`
+and `uv run python scripts/gen_declarations.py`. A domain missing from `stack.py`
 starts nowhere and fails silently — check both files before declaring done.
 
 **Adding a tool** also needs an entry in the domain's `seeds.py` `TOOL_ACCESS`
-(`write` when it creates or changes a ledger record, otherwise `read`) and a
-regenerated manifest. The generator stops on a registered tool with no entry,
-and `tests/test_tool_access.py` needs the tool's arguments.
+(`write` when it creates or changes a ledger record, otherwise `read`), a
+regenerated manifest and regenerated declaration files. The manifest generator
+stops on a registered tool with no entry, and `tests/test_tool_access.py`
+needs the tool's arguments.
 
 ## Seeded state
 
@@ -68,7 +70,17 @@ with the records each executor returns, add the call to the tables in
 its carrier tool to return the field in both executors, or the record lists must
 differ the way `occiai.referral.reason` does. The twin's list holds every safe
 record, so a package seeded for the safe target also runs on the twin. Do not edit
-`tool-manifest.json` by hand.
+`tool-manifest.json` by hand. A slot's `max_chars` (2000 unless set) bounds an
+`artifact-seed-v1` item's content and must stay what `seed.schema.json` states
+for `mini-agents-seed-v1`.
+
+**Declaration files.** `src/mini_agents/declarations/<domain>/{safe,unsafe}/`
+holds `tools-list.json` (the default server's `tools/list` result) and
+`runtime-spec.yaml` (`declared-runtime-v1`: seed slots with `max_chars` and
+each variant's records, and every listed tool's operation class from
+`TOOL_ACCESS`). Regenerate them with `uv run python scripts/gen_declarations.py`
+after a tool, its description or arguments, a slot or a `TOOL_ACCESS` entry
+changes; `tests/test_declarations.py` checks them against the live servers.
 
 **MiDojo base.** `src/mini_agents/midojo-base.json` holds each domain's default
 ledger (`State.to_environment()`), its seed slots and its tool access, for the
