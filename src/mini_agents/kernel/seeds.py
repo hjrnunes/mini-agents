@@ -1,5 +1,12 @@
 """Startup seeding: plant consumer-authored text into one named record.
 
+Two formats are read: this package's ``mini-agents-seed-v1``
+(``seed.schema.json``), and ``artifact-seed-v1``, the ``seed.json`` of an
+artifact package. They differ in their bounds: the first caps the item count
+and every item's content, the second requires ``carrier_operation`` and bounds
+each item's content by its slot's ``max_chars``, which the declaration files
+state. Only the first writes ``<seed-file>.applied.json``.
+
 A seed changes state only. No tool is added or changed, so the safe and unsafe
 executors stay in lockstep and the hook works in both modes. Each domain keeps
 its slot table in ``domains/<name>/seeds.py``; this module holds what the
@@ -18,6 +25,7 @@ from pathlib import Path
 from typing import Any, Optional, Sequence
 
 SEED_SCHEMA_VERSION = "mini-agents-seed-v1"
+ARTIFACT_SEED_VERSION = "artifact-seed-v1"
 APPLIED_SCHEMA_VERSION = "mini-agents-seed-applied-v1"
 EXIT_CODE = 3
 MAX_ITEMS = 4
@@ -67,6 +75,7 @@ class SeedItem:
 class SeedDocument:
     carrier_operation: Optional[str]
     items: list[SeedItem]
+    schema_version: str = SEED_SCHEMA_VERSION
 
 
 @dataclass(frozen=True)
@@ -76,6 +85,8 @@ class Slot:
     ``records`` and ``unsafe_records`` list the record ids the hook accepts in
     safe and unsafe mode. They differ where the two executors expose different
     records: a seed on a record the carrier never returns would reach no agent.
+    ``max_chars`` bounds one item's content; ``seed.schema.json`` states the
+    same limit for every slot.
     """
 
     id: str
@@ -88,23 +99,37 @@ class Slot:
     unsafe_records: tuple[str, ...]
     container: str
     attribute: str
+    max_chars: int = MAX_CONTENT_CHARS
 
     def accepted(self, unsafe: bool) -> tuple[str, ...]:
         return self.unsafe_records if unsafe else self.records
 
 
 def parse_seed(raw: bytes) -> SeedDocument:
-    """Validate the seed document's shape and bounds; touch no state."""
+    """Validate the seed document's shape and bounds; touch no state.
+
+    The ``schema_version`` picks the format. A slot's ``max_chars`` is checked
+    when the item is applied, since only then is the slot known.
+    """
     try:
         document = json.loads(raw)
     except ValueError as exc:
         raise SeedError(
             "schema_mismatch", f"not valid JSON ({type(exc).__name__})"
         ) from exc
+    if isinstance(document, dict) and (
+        document.get("schema_version") == ARTIFACT_SEED_VERSION
+    ):
+        items = _artifact_items(document)
+        return SeedDocument(
+            carrier_operation=document["carrier_operation"],
+            items=[_parse_item(item, _ARTIFACT_ITEM_RULES) for item in items],
+            schema_version=ARTIFACT_SEED_VERSION,
+        )
     items = _document_items(document)
     return SeedDocument(
         carrier_operation=document.get("carrier_operation"),
-        items=[_parse_item(item) for item in items],
+        items=[_check_length(_parse_item(item, _ITEM_RULES)) for item in items],
     )
 
 
@@ -126,18 +151,36 @@ def _document_items(document: Any) -> list:
     return items
 
 
-def _parse_item(item: Any) -> SeedItem:
+def _artifact_items(document: dict) -> list:
+    if set(document) != _DOCUMENT_KEYS:
+        raise SeedError("schema_mismatch", "document keys")
+    if not _is_text(document["carrier_operation"]):
+        raise SeedError("schema_mismatch", "carrier_operation")
+    items = document["items"]
+    if not isinstance(items, list):
+        raise SeedError("schema_mismatch", "items")
+    if not items:
+        raise SeedError("schema_mismatch", "items is empty")
+    return items
+
+
+def _parse_item(item: Any, rules: tuple) -> SeedItem:
     if not isinstance(item, dict) or set(item) != _ITEM_KEYS:
         raise SeedError("schema_mismatch", "item keys")
-    for field, is_valid in _ITEM_RULES:
+    for field, is_valid in rules:
         if not is_valid(item[field]):
             raise SeedError("schema_mismatch", field)
-    content = item["content"]
-    if len(content) > MAX_CONTENT_CHARS:
+    return SeedItem(item["slot"], item["record_ref"], item["mode"], item["content"])
+
+
+def _check_length(
+    item: SeedItem, limit: int = MAX_CONTENT_CHARS, where: str = ""
+) -> SeedItem:
+    if len(item.content) > limit:
         raise SeedError(
-            "content_too_long", f"{len(content)} characters, limit {MAX_CONTENT_CHARS}"
+            "content_too_long", f"{len(item.content)} characters, limit {limit}{where}"
         )
-    return SeedItem(item["slot"], item["record_ref"], item["mode"], content)
+    return item
 
 
 def _is_text(value: Any) -> bool:
@@ -152,6 +195,13 @@ def _is_record_ref(value: Any) -> bool:
 _ITEM_RULES = (
     ("slot", lambda value: isinstance(value, str)),
     ("record_ref", _is_record_ref),
+    ("mode", lambda value: value in MODES),
+    ("content", _is_text),
+)
+# artifact-seed-v1 states no record pattern; an unknown record is refused on apply.
+_ARTIFACT_ITEM_RULES = (
+    ("slot", _is_text),
+    ("record_ref", _is_text),
     ("mode", lambda value: value in MODES),
     ("content", _is_text),
 )
@@ -186,6 +236,7 @@ def _resolve(
         raise SeedError("carrier_mismatch", f"{slot.id} is carried by {slot.carrier_operation}")
     if item.record_ref not in slot.accepted(unsafe):
         raise SeedError("unknown_record", f"record {item.record_ref!r} for slot {slot.id}")
+    _check_length(item, slot.max_chars, f" for slot {slot.id}")
     return slot
 
 
@@ -202,7 +253,8 @@ def seeded_state(domain: str, seed_file: str, *, unsafe: bool) -> Any:
     applied = seeds.apply_seed(
         state, document.items, unsafe=unsafe, carrier=document.carrier_operation
     )
-    write_applied(path, domain=domain, unsafe=unsafe, raw=raw, slots=applied)
+    if document.schema_version == SEED_SCHEMA_VERSION:
+        write_applied(path, domain=domain, unsafe=unsafe, raw=raw, slots=applied)
     return state
 
 

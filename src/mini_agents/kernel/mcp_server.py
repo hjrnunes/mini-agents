@@ -404,7 +404,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "--seed-file",
         help=(
             "JSON file of consumer-authored text to plant into named records "
-            "before the server starts. Writes <file>.applied.json."
+            "before the server starts: mini-agents-seed-v1 (writes "
+            "<file>.applied.json) or artifact-seed-v1."
         ),
     )
     parser.add_argument(

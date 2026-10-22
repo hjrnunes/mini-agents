@@ -509,15 +509,27 @@ uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
 }
 ```
 
+The file is in one of two formats, told apart by `schema_version`:
+
+- `mini-agents-seed-v1` (above; `seed.schema.json`).
+- `artifact-seed-v1`, the `seed.json` of an artifact package. It has the same
+  keys, but `carrier_operation` is required, the file has no item cap, and
+  each item's `content` holds at most its slot's `max_chars` characters, as
+  the domain's `runtime-spec.yaml` states (section "Declaration files"). It
+  writes no `<seed-file>.applied.json`.
+
 - `mode` is `replace` or `append`. `append` adds one space and the content
   after the current text.
-- A file holds 1 to 4 items; each `content` holds 1 to 2000 characters.
-- `carrier_operation` is optional. When present, it must equal the carrier of
-  every item's slot.
+- A `mini-agents-seed-v1` file holds 1 to 4 items; each `content` holds 1 to
+  2000 characters.
+- `carrier_operation` is optional in `mini-agents-seed-v1`. When present, it
+  must equal the carrier of every item's slot.
 - `record_ref` must be a record the slot's carrier returns in the current
   mode. The safe and unsafe executors return different records, so the
-  manifest lists `records` (safe) and `unsafe_records`.
-- After the text is planted and before the server starts, the process writes
+  manifest lists `records` (safe) and `unsafe_records`, and each variant's
+  `runtime-spec.yaml` lists its own `records`.
+- For a `mini-agents-seed-v1` file, after the text is planted and before the
+  server starts, the process writes
   `<seed-file>.applied.json`: `schema_version`, `domain`, `mode`, `sha256` of
   the seed file's bytes, and `slots` (the slot id of each item, in file order).
   This file is the only report of the seed. The state-summary tool returns the
@@ -530,8 +542,8 @@ uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
 | --- | --- |
 | `seed_file_unreadable` | The file does not exist or cannot be read. |
 | `schema_mismatch` | Not valid JSON, or keys, types, `schema_version`, `mode` or `record_ref` format are wrong, or `items` is empty. |
-| `too_many_items` | More than 4 items. |
-| `content_too_long` | An item's content exceeds 2000 characters. |
+| `too_many_items` | More than 4 items (`mini-agents-seed-v1`). |
+| `content_too_long` | An item's content exceeds 2000 characters, or its slot's `max_chars`. |
 | `unknown_slot` | The slot does not exist for `--domain`. |
 | `unknown_record` | The record is not one the slot's carrier returns in the current mode. |
 | `carrier_mismatch` | `carrier_operation` differs from the slot's carrier. |
