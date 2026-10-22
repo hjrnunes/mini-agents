@@ -32,10 +32,13 @@ to catch a wiring gap; imports alone pass.
 
 **Every domain exposes a state summary.** `get_<domain>_state_summary`
 serializes the full ledger. Tests and evaluation grade the ledger through this
-one tool. It is an observer, not an assistant tool: a client that sends
-`X-Mini-Agents-View: assistant` does not see it in `tools/list`
-(`kernel/mcp_server.py`, `_TargetMCP`), while every other client lists it and
-any client can call it by name. Pass each new builder its observer's name.
+one tool. It is an observer, not an assistant tool: it stays registered and any
+client can call it by name, but `tools/list` leaves it out
+(`kernel/mcp_server.py`, `_TargetMCP`). `--state-summary` or
+`MINI_AGENTS_STATE_SUMMARY=1` lists it again, except to a client that sends
+`X-Mini-Agents-View: assistant`. No server instruction names it. Pass each new
+builder its observer's name; code that needs every registered tool sets
+`list_observer = True` on the server first, as `kernel/manifest.py` does.
 
 ## Adding a domain
 

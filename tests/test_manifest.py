@@ -112,6 +112,7 @@ def test_the_manifest_covers_the_three_targets():
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_every_registered_tool_is_in_the_manifest_and_nothing_else(domain):
     server = mcp_server.BUILDERS[domain]()
+    server.list_observer = True
     registered = {tool.name for tool in asyncio.run(server.list_tools())}
 
     listed = {tool["name"] for tool in _committed()["targets"][domain]["tools"]}

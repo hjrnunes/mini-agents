@@ -29,6 +29,8 @@ def _seeds(domain: str) -> Any:
 
 def _registered_tools(domain: str) -> set[str]:
     server = mcp_server.BUILDERS[domain]()
+    # The state summary is registered but listed only on request.
+    server.list_observer = True
     return {tool.name for tool in asyncio.run(server.list_tools())}
 
 

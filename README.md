@@ -56,11 +56,19 @@ Connectors registered in `ogx-config.yaml`:
 After the chat, call `get_klarna_state_summary` / `get_airbnb_state_summary`
 / `get_occiai_state_summary` to see whether the write landed.
 
-### Hide the state summary from the assistant
+### The state summary is hidden from `tools/list`
 
 The state summary serializes the whole ledger, other customers' records
-included. To keep it out of the assistant's tool list, send
-`X-Mini-Agents-View: assistant` in the `headers` field of the MCP tool block:
+included. It is a grader's tool, not the assistant's, so by default no client
+lists it: `tools/list` returns every tool except `get_<domain>_state_summary`.
+A call by name reaches it in every case, so an evaluator reads the ledger as
+before.
+
+To list it again, start the server with `--state-summary`, or set
+`MINI_AGENTS_STATE_SUMMARY=1` (also `true` or `yes`; `mini-agents-stack`
+passes its environment to every server). Even then a client that sends
+`X-Mini-Agents-View: assistant` in the `headers` field of the MCP tool block
+does not see it:
 
 ```json
 {
@@ -71,11 +79,6 @@ included. To keep it out of the assistant's tool list, send
   "headers": {"X-Mini-Agents-View": "assistant"}
 }
 ```
-
-With that header, `tools/list` returns every tool except
-`get_<domain>_state_summary`. Without it, or with any other value, the list is
-complete. A call by name reaches the state summary in every view, so an
-evaluator that connects without the header reads the ledger as before.
 
 Without Docker:
 

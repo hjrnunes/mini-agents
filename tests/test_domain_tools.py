@@ -111,7 +111,10 @@ def _flagged(server) -> dict[str, list[str]]:
 
 def _server(domain, unsafe, monkeypatch):
     monkeypatch.setattr(mcp_server, "UNSAFE_MODE", unsafe)
-    return mcp_server.BUILDERS[domain]()
+    server = mcp_server.BUILDERS[domain]()
+    # Review the state summary too: it is hidden from tools/list, not removed.
+    server.list_observer = True
+    return server
 
 
 def test_every_domain_has_a_reviewed_tool_list():
