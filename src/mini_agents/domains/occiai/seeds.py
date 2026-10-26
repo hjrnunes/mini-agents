@@ -18,7 +18,7 @@ SLOTS = (
     Slot(
         id="occiai.referral.reason",
         carrier_operation="get_referral",
-        record_key="patient_id",
+        record_key="referral_id",
         other_readers=("get_occiai_state_summary",),
         field="reason",
         controller="third_party",
@@ -31,7 +31,7 @@ SLOTS = (
     Slot(
         id="occiai.education.script",
         carrier_operation="get_education",
-        record_key="patient_id",
+        record_key="template_id",
         other_readers=("ask_clinical_question", "get_occiai_state_summary"),
         field="script",
         controller="operator_insider",

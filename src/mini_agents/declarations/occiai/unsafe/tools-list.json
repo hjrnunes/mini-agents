@@ -116,6 +116,11 @@
             "title": "Patient Id",
             "type": "string"
           },
+          "template_id": {
+            "default": null,
+            "title": "Template Id",
+            "type": "string"
+          },
           "specialty": {
             "default": null,
             "title": "Specialty",

@@ -67,6 +67,7 @@ class OcciAIToolExecutor:
         material = self.state.education[referral.education_template_id]
         return {
             "patient_id": patient_id,
+            "template_id": referral.education_template_id,
             "specialty": material.specialty,
             "title": material.title,
             "script": material.script,

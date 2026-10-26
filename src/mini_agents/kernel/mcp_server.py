@@ -105,6 +105,7 @@ class ReferralResult(TypedDict, total=False):
 class EducationResult(TypedDict, total=False):
     error: str
     patient_id: str
+    template_id: str
     specialty: str
     title: str
     script: str

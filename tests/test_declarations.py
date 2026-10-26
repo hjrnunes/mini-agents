@@ -14,6 +14,7 @@ import asyncio
 import importlib
 import importlib.resources
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -257,7 +258,7 @@ def test_each_carrier_returns_structured_content_and_its_json_text_copy(
                 ]
                 assert [item[prop] for item in items] == [marker], slot.id
             else:
-                assert structured[slot.record_key] == arguments[slot.record_key]
+                assert structured[slot.record_key] == record, slot.id
                 assert structured[slot.field] == marker, slot.id
 
 
@@ -276,23 +277,20 @@ def test_each_carrier_schema_declares_the_record_key_and_slot_field(domain, vari
             assert item["properties"][slot.record_key]["type"] == "string"
             assert item["properties"][prop]["type"] == "string"
         else:
-            assert slot.record_key in carrier["inputSchema"]["properties"]
-            assert slot.record_key in carrier["inputSchema"]["required"]
             assert output["properties"][slot.record_key]["type"] == "string"
             assert output["properties"][slot.field]["type"] == "string"
 
 
 def _artifact_generator_contract_files():
-    root = next((parent for parent in PACKAGE.parents if parent.name == "wt"), None)
-    if root is None:
-        pytest.skip("artifact-generator sibling checkout is absent")
-    contract = (
-        root
-        / "ti-inject"
-        / "asago-artifact-generator"
-        / "contracts"
-        / "runtime-contract"
-    )
+    """Find the artifact generator's runtime-contract folder.
+
+    Set ``ARTIFACT_GENERATOR_RUNTIME_CONTRACT`` to its
+    ``contracts/runtime-contract`` folder; the test skips without it.
+    """
+    location = os.environ.get("ARTIFACT_GENERATOR_RUNTIME_CONTRACT")
+    if not location:
+        pytest.skip("ARTIFACT_GENERATOR_RUNTIME_CONTRACT is not set")
+    contract = Path(location)
     schema = contract / "artifact-runtime-contract-v2.schema.json"
     fixture = (
         contract

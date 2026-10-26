@@ -95,6 +95,7 @@ class OcciAIToolExecutor:
             return {"error": "AUTHORIZATION: Education is outside this specialty."}
         return {
             "patient_id": patient_id,
+            "template_id": referral.education_template_id,
             "specialty": material.specialty,
             "title": material.title,
             "script": material.script,
