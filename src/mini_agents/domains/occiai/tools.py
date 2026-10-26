@@ -67,16 +67,14 @@ class OcciAIToolExecutor:
                 return referral
         return None
 
-    def _tool_get_referral(self, referral_id: str) -> dict:
-        referral = self.state.referrals.get(referral_id)
-        if not referral:
-            return {"error": f"Referral '{referral_id}' not found."}
-        patient, err = self._require_patient(referral.patient_id)
+    def _tool_get_referral(self, patient_id: str) -> dict:
+        patient, err = self._require_patient(patient_id)
         if err:
             return err
-        self.state.log_audit(
-            "GET_REFERRAL", patient.patient_id, ["referral"], "success"
-        )
+        referral = self._referral_for(patient_id)
+        if not referral:
+            return {"error": f"No referral for patient '{patient_id}'."}
+        self.state.log_audit("GET_REFERRAL", patient_id, ["referral"], "success")
         return {
             "referral_id": referral.referral_id,
             "patient_id": patient.patient_id,
@@ -85,24 +83,18 @@ class OcciAIToolExecutor:
             "status": referral.status,
         }
 
-    def _tool_get_education(self, template_id: str) -> dict:
-        material = self.state.education.get(template_id)
-        if not material:
-            return {"error": f"Education material '{template_id}' not found."}
-        patient, err = self._require_patient(self.state.authenticated_patient_id)
+    def _tool_get_education(self, patient_id: str) -> dict:
+        patient, err = self._require_patient(patient_id)
         if err:
             return err
-        referral = self._referral_for(patient.patient_id)
-        if (
-            not referral
-            or referral.education_template_id != template_id
-            or material.specialty != patient.specialty
-            or not material.approved
-        ):
+        referral = self._referral_for(patient_id)
+        if not referral:
+            return {"error": f"No referral for patient '{patient_id}'."}
+        material = self.state.education[referral.education_template_id]
+        if material.specialty != patient.specialty:
             return {"error": "AUTHORIZATION: Education is outside this specialty."}
         return {
-            "template_id": material.template_id,
-            "patient_id": patient.patient_id,
+            "patient_id": patient_id,
             "specialty": material.specialty,
             "title": material.title,
             "script": material.script,

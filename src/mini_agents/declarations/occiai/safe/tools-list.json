@@ -40,13 +40,13 @@
       "description": "Return the authenticated patient's referral.",
       "inputSchema": {
         "properties": {
-          "referral_id": {
-            "title": "Referral Id",
+          "patient_id": {
+            "title": "Patient Id",
             "type": "string"
           }
         },
         "required": [
-          "referral_id"
+          "patient_id"
         ],
         "title": "get_referralArguments",
         "type": "object"
@@ -90,16 +90,16 @@
     },
     {
       "name": "get_education",
-      "description": "Return approved education material by id for the patient's specialty.",
+      "description": "Return approved education material for the patient's specialty.",
       "inputSchema": {
         "properties": {
-          "template_id": {
-            "title": "Template Id",
+          "patient_id": {
+            "title": "Patient Id",
             "type": "string"
           }
         },
         "required": [
-          "template_id"
+          "patient_id"
         ],
         "title": "get_educationArguments",
         "type": "object"
@@ -109,11 +109,6 @@
           "error": {
             "default": null,
             "title": "Error",
-            "type": "string"
-          },
-          "template_id": {
-            "default": null,
-            "title": "Template Id",
             "type": "string"
           },
           "patient_id": {

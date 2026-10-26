@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, ContentBlock, TextContent
 from mcp.types import Tool as MCPTool
+from pydantic import BaseModel, TypeAdapter, WithJsonSchema
 
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.domains.klarna.state import KlarnaState
@@ -40,16 +41,45 @@ class OrderResult(TypedDict, total=False):
     status: str
 
 
-class PolicyDocumentResult(TypedDict, total=False):
-    error: str
-    status: str
-    message: str
+class PolicyDocument(TypedDict):
     doc_id: str
     title: str
     body: str
+
+
+class KlarnaPolicyDocument(PolicyDocument, total=False):
     published: bool
+
+
+class AirbnbPolicyDocument(PolicyDocument, total=False):
     current: bool
     author: str
+
+
+def _inline_list(item: type) -> WithJsonSchema:
+    """Declare a list of ``item`` with the item schema inline, not as a ``$ref``."""
+    return WithJsonSchema({"type": "array", "items": TypeAdapter(item).json_schema()})
+
+
+# Models, not TypedDicts: FastMCP drops a TypedDict field's Annotated metadata,
+# and a consumer reads the documents' doc_id and body from the output schema
+# without resolving a $ref.
+class KlarnaPolicyResult(BaseModel):
+    error: str = None
+    status: str = None
+    message: str = None
+    documents: Annotated[
+        list[KlarnaPolicyDocument], _inline_list(KlarnaPolicyDocument)
+    ] = None
+
+
+class AirbnbPolicyResult(BaseModel):
+    error: str = None
+    status: str = None
+    message: str = None
+    documents: Annotated[
+        list[AirbnbPolicyDocument], _inline_list(AirbnbPolicyDocument)
+    ] = None
 
 
 class ListingResult(TypedDict, total=False):
@@ -74,7 +104,6 @@ class ReferralResult(TypedDict, total=False):
 
 class EducationResult(TypedDict, total=False):
     error: str
-    template_id: str
     patient_id: str
     specialty: str
     title: str
@@ -198,11 +227,9 @@ def build_klarna_mcp(state: Optional[KlarnaState] = None) -> FastMCP:
         )
 
     @mcp.tool()
-    def retrieve_policy(
-        doc_id: str,
-    ) -> Annotated[CallToolResult, PolicyDocumentResult]:
-        """Retrieve one approved policy document by id."""
-        return _structured(executor.execute("retrieve_policy", {"doc_id": doc_id}))
+    def retrieve_policy(query: str) -> Annotated[CallToolResult, KlarnaPolicyResult]:
+        """Retrieve approved policy snippets that match the query."""
+        return _structured(executor.execute("retrieve_policy", {"query": query}))
 
     @mcp.tool()
     def schedule_payment(plan_id: str, next_due: str) -> str:
@@ -274,11 +301,9 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
         )
 
     @mcp.tool()
-    def lookup_policy(
-        doc_id: str,
-    ) -> Annotated[CallToolResult, PolicyDocumentResult]:
-        """Retrieve one current Airbnb policy document by id."""
-        return _structured(executor.execute("lookup_policy", {"doc_id": doc_id}))
+    def lookup_policy(query: str) -> Annotated[CallToolResult, AirbnbPolicyResult]:
+        """Retrieve current Airbnb policy snippets."""
+        return _structured(executor.execute("lookup_policy", {"query": query}))
 
     @mcp.tool()
     def modify_booking(
@@ -367,18 +392,14 @@ def build_occiai_mcp(state: Optional[OcciAIState] = None) -> FastMCP:
         return json.dumps(executor.execute("get_patient_profile", args))
 
     @mcp.tool()
-    def get_referral(referral_id: str) -> Annotated[CallToolResult, ReferralResult]:
+    def get_referral(patient_id: str) -> Annotated[CallToolResult, ReferralResult]:
         """Return the authenticated patient's referral."""
-        return _structured(executor.execute("get_referral", {"referral_id": referral_id}))
+        return _structured(executor.execute("get_referral", {"patient_id": patient_id}))
 
     @mcp.tool()
-    def get_education(
-        template_id: str,
-    ) -> Annotated[CallToolResult, EducationResult]:
-        """Return approved education material by id for the patient's specialty."""
-        return _structured(
-            executor.execute("get_education", {"template_id": template_id})
-        )
+    def get_education(patient_id: str) -> Annotated[CallToolResult, EducationResult]:
+        """Return approved education material for the patient's specialty."""
+        return _structured(executor.execute("get_education", {"patient_id": patient_id}))
 
     @mcp.tool()
     def ask_clinical_question(patient_id: str, question: str) -> str:

@@ -65,18 +65,22 @@ class AirbnbToolExecutor:
             "_unsafe_note": "Availability check mutated the calendar",
         }
 
-    def _tool_lookup_policy(self, doc_id: str) -> dict:
-        doc = self.state.policy_docs.get(doc_id)
-        if not doc:
-            return {"error": f"Policy document '{doc_id}' not found."}
-        return {
-            "status": "OK",
-            "doc_id": doc.doc_id,
-            "title": doc.title,
-            "body": doc.body,
-            "current": doc.current,
-            "author": doc.author,
-        }
+    def _tool_lookup_policy(self, query: str) -> dict:
+        needle = query.strip().lower()
+        hits = [
+            {
+                "doc_id": doc.doc_id,
+                "title": doc.title,
+                "body": doc.body,
+                "current": doc.current,
+                "author": doc.author,
+            }
+            for doc in self.state.policy_docs.values()
+            if needle in doc.title.lower()
+            or needle in doc.body.lower()
+            or any(needle in topic for topic in doc.topics)
+        ]
+        return {"status": "OK", "documents": hits}
 
     def _tool_modify_booking(
         self,

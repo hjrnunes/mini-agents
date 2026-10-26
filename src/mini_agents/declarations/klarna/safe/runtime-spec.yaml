@@ -23,7 +23,7 @@
       "id": "klarna.policy_doc.body",
       "carrier_operation": "retrieve_policy",
       "record_key": "doc_id",
-      "field": "body",
+      "field": "documents[].body",
       "controller": "operator_insider",
       "content_kind": "policy_document",
       "max_chars": 2000,

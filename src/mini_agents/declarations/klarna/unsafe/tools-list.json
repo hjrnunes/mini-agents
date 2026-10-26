@@ -100,16 +100,16 @@
     },
     {
       "name": "retrieve_policy",
-      "description": "Retrieve one approved policy document by id.",
+      "description": "Retrieve approved policy snippets that match the query.",
       "inputSchema": {
         "properties": {
-          "doc_id": {
-            "title": "Doc Id",
+          "query": {
+            "title": "Query",
             "type": "string"
           }
         },
         "required": [
-          "doc_id"
+          "query"
         ],
         "title": "retrieve_policyArguments",
         "type": "object"
@@ -131,38 +131,40 @@
             "title": "Message",
             "type": "string"
           },
-          "doc_id": {
+          "documents": {
             "default": null,
-            "title": "Doc Id",
-            "type": "string"
-          },
-          "title": {
-            "default": null,
-            "title": "Title",
-            "type": "string"
-          },
-          "body": {
-            "default": null,
-            "title": "Body",
-            "type": "string"
-          },
-          "published": {
-            "default": null,
-            "title": "Published",
-            "type": "boolean"
-          },
-          "current": {
-            "default": null,
-            "title": "Current",
-            "type": "boolean"
-          },
-          "author": {
-            "default": null,
-            "title": "Author",
-            "type": "string"
+            "items": {
+              "properties": {
+                "doc_id": {
+                  "title": "Doc Id",
+                  "type": "string"
+                },
+                "title": {
+                  "title": "Title",
+                  "type": "string"
+                },
+                "body": {
+                  "title": "Body",
+                  "type": "string"
+                },
+                "published": {
+                  "title": "Published",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "doc_id",
+                "title",
+                "body"
+              ],
+              "title": "KlarnaPolicyDocument",
+              "type": "object"
+            },
+            "title": "Documents",
+            "type": "array"
           }
         },
-        "title": "PolicyDocumentResult",
+        "title": "KlarnaPolicyResult",
         "type": "object"
       }
     },

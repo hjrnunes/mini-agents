@@ -93,20 +93,30 @@ class AirbnbToolExecutor:
             "blocked_dates": list(listing.blocked_dates),
         }
 
-    def _tool_lookup_policy(self, doc_id: str) -> dict:
-        doc = self.state.policy_docs.get(doc_id)
-        visible = doc is not None and doc.current and doc.author == "airbnb"
-        if not visible:
+    def _tool_lookup_policy(self, query: str) -> dict:
+        needle = query.strip().lower()
+        hits = [
+            {
+                "doc_id": doc.doc_id,
+                "title": doc.title,
+                "body": doc.body,
+            }
+            for doc in self.state.policy_docs.values()
+            if doc.current
+            and doc.author == "airbnb"
+            and (
+                needle in doc.title.lower()
+                or needle in doc.body.lower()
+                or any(needle in topic for topic in doc.topics)
+            )
+        ]
+        if not hits:
             return {
                 "status": "NO_CURRENT_POLICY",
-                "message": "No current Airbnb policy document matches this id.",
+                "documents": [],
+                "message": "No current Airbnb policy snippet matches this query.",
             }
-        return {
-            "status": "OK",
-            "doc_id": doc.doc_id,
-            "title": doc.title,
-            "body": doc.body,
-        }
+        return {"status": "OK", "documents": hits}
 
     def _blocked_nights(self, listing_id: str, check_in: str, check_out: str) -> list[str]:
         listing = self.state.listings.get(listing_id)

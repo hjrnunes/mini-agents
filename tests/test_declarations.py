@@ -179,6 +179,49 @@ def test_the_slots_are_the_domain_slots_with_this_variants_records(domain, varia
         assert declared["records"] == list(slot.accepted(variant == "unsafe"))
 
 
+# Each carrier's arguments, as agents call it, for the record a seed names. A
+# policy query matches the record's title, which a planted body leaves alone.
+POLICY_QUERY = {
+    "POL-REFUND": "refund",
+    "POL-SCHEDULE": "schedule",
+    "POL-FEES-DRAFT": "fees",
+    "POL-MOD": "modification",
+    "POL-HOST-DRAFT": "house-rules",
+}
+PATIENT_OF_RECORD = {
+    "REF-101": "PAT-101",
+    "REF-104": "PAT-104",
+    "REF-201": "PAT-201",
+    "EDU-CATARACT": "PAT-104",
+    "EDU-GYNAE": "PAT-201",
+}
+CARRIER_CALLS = {
+    "lookup_order": lambda record: {"order_id": record},
+    "retrieve_policy": lambda record: {"query": POLICY_QUERY[record]},
+    "get_listing": lambda record: {"listing_id": record},
+    "lookup_policy": lambda record: {"query": POLICY_QUERY[record]},
+    "get_referral": lambda record: {"patient_id": PATIENT_OF_RECORD[record]},
+    "get_education": lambda record: {"patient_id": PATIENT_OF_RECORD[record]},
+}
+
+
+def _list_field(field):
+    """Split ``documents[].body`` into the list and the item property, else None."""
+    if "[]." not in field:
+        return None
+    return tuple(field.split("[].", 1))
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_each_carrier_takes_the_arguments_agents_already_send(domain, variant):
+    tools = {tool["name"]: tool for tool in _shipped_tools(domain, variant)["tools"]}
+    for slot in _seeds(domain).SLOTS:
+        inputs = tools[slot.carrier_operation]["inputSchema"]
+        expected = set(CARRIER_CALLS[slot.carrier_operation](slot.records[0]))
+        assert set(inputs["properties"]) == expected, slot.id
+        assert set(inputs["required"]) == expected, slot.id
+
+
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
 def test_each_carrier_returns_structured_content_and_its_json_text_copy(
     domain, variant, monkeypatch
@@ -186,30 +229,36 @@ def test_each_carrier_returns_structured_content_and_its_json_text_copy(
     unsafe = variant == "unsafe"
     seeds = _seeds(domain)
     for slot in seeds.SLOTS:
-        record = slot.accepted(unsafe)[0]
-        marker = f"STRUCTURED[{slot.id}:{variant}]"
-        state = seeds.new_state()
-        seeds.apply_seed(
-            state,
-            [SeedItem(slot.id, record, "replace", marker)],
-            unsafe=unsafe,
-        )
+        for record in slot.accepted(unsafe):
+            marker = f"STRUCTURED[{slot.id}:{record}:{variant}]"
+            state = seeds.new_state()
+            seeds.apply_seed(
+                state,
+                [SeedItem(slot.id, record, "replace", marker)],
+                unsafe=unsafe,
+            )
+            arguments = CARRIER_CALLS[slot.carrier_operation](record)
 
-        result = _live_call(
-            domain,
-            variant,
-            state,
-            slot.carrier_operation,
-            {slot.record_key: record},
-            monkeypatch,
-        )
+            result = _live_call(
+                domain, variant, state, slot.carrier_operation, arguments, monkeypatch
+            )
 
-        assert result.isError is False
-        assert result.structuredContent is not None
-        assert len(result.content) == 1 and result.content[0].type == "text"
-        assert json.loads(result.content[0].text) == result.structuredContent
-        assert result.structuredContent[slot.record_key] == record
-        assert result.structuredContent[slot.field] == marker
+            structured = result.structuredContent
+            assert result.isError is False
+            assert structured is not None and "error" not in structured, structured
+            assert len(result.content) == 1 and result.content[0].type == "text"
+            assert result.content[0].text == json.dumps(structured)
+            listed = _list_field(slot.field)
+            if listed:
+                name, prop = listed
+                items = [
+                    item for item in structured[name]
+                    if item[slot.record_key] == record
+                ]
+                assert [item[prop] for item in items] == [marker], slot.id
+            else:
+                assert structured[slot.record_key] == arguments[slot.record_key]
+                assert structured[slot.field] == marker, slot.id
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
@@ -217,11 +266,20 @@ def test_each_carrier_schema_declares_the_record_key_and_slot_field(domain, vari
     tools = {tool["name"]: tool for tool in _shipped_tools(domain, variant)["tools"]}
     for slot in _seeds(domain).SLOTS:
         carrier = tools[slot.carrier_operation]
-        assert slot.record_key in carrier["inputSchema"]["properties"]
-        assert slot.record_key in carrier["inputSchema"]["required"]
-        assert carrier["outputSchema"]["type"] == "object"
-        assert carrier["outputSchema"]["properties"][slot.record_key]["type"] == "string"
-        assert carrier["outputSchema"]["properties"][slot.field]["type"] == "string"
+        output = carrier["outputSchema"]
+        assert output["type"] == "object"
+        listed = _list_field(slot.field)
+        if listed:
+            name, prop = listed
+            assert output["properties"][name]["type"] == "array"
+            item = output["properties"][name]["items"]
+            assert item["properties"][slot.record_key]["type"] == "string"
+            assert item["properties"][prop]["type"] == "string"
+        else:
+            assert slot.record_key in carrier["inputSchema"]["properties"]
+            assert slot.record_key in carrier["inputSchema"]["required"]
+            assert output["properties"][slot.record_key]["type"] == "string"
+            assert output["properties"][slot.field]["type"] == "string"
 
 
 def _artifact_generator_contract_files():

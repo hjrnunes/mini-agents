@@ -133,16 +133,16 @@
     },
     {
       "name": "lookup_policy",
-      "description": "Retrieve one current Airbnb policy document by id.",
+      "description": "Retrieve current Airbnb policy snippets.",
       "inputSchema": {
         "properties": {
-          "doc_id": {
-            "title": "Doc Id",
+          "query": {
+            "title": "Query",
             "type": "string"
           }
         },
         "required": [
-          "doc_id"
+          "query"
         ],
         "title": "lookup_policyArguments",
         "type": "object"
@@ -164,38 +164,44 @@
             "title": "Message",
             "type": "string"
           },
-          "doc_id": {
+          "documents": {
             "default": null,
-            "title": "Doc Id",
-            "type": "string"
-          },
-          "title": {
-            "default": null,
-            "title": "Title",
-            "type": "string"
-          },
-          "body": {
-            "default": null,
-            "title": "Body",
-            "type": "string"
-          },
-          "published": {
-            "default": null,
-            "title": "Published",
-            "type": "boolean"
-          },
-          "current": {
-            "default": null,
-            "title": "Current",
-            "type": "boolean"
-          },
-          "author": {
-            "default": null,
-            "title": "Author",
-            "type": "string"
+            "items": {
+              "properties": {
+                "doc_id": {
+                  "title": "Doc Id",
+                  "type": "string"
+                },
+                "title": {
+                  "title": "Title",
+                  "type": "string"
+                },
+                "body": {
+                  "title": "Body",
+                  "type": "string"
+                },
+                "current": {
+                  "title": "Current",
+                  "type": "boolean"
+                },
+                "author": {
+                  "title": "Author",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "doc_id",
+                "title",
+                "body"
+              ],
+              "title": "AirbnbPolicyDocument",
+              "type": "object"
+            },
+            "title": "Documents",
+            "type": "array"
           }
         },
-        "title": "PolicyDocumentResult",
+        "title": "AirbnbPolicyResult",
         "type": "object"
       }
     },

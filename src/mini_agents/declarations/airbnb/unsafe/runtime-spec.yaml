@@ -22,7 +22,7 @@
       "id": "airbnb.policy_doc.body",
       "carrier_operation": "lookup_policy",
       "record_key": "doc_id",
-      "field": "body",
+      "field": "documents[].body",
       "controller": "operator_insider",
       "content_kind": "policy_document",
       "max_chars": 2000,
