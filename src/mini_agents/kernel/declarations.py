@@ -3,10 +3,10 @@
 A consumer describes a target by two files, as it describes a declared one:
 ``tools-list.json``, the MCP ``tools/list`` result of the target's server, and
 ``runtime-spec.yaml`` (``declared-runtime-v1``), what that list does not state.
-The spec names each seed slot, with its carrier tool, field, controller,
-content kind, ``max_chars`` and records, and classifies every listed tool as
-``read_only`` or ``mutating`` from the domain's ``TOOL_ACCESS``, since no tool
-carries MCP annotations.
+The spec names each seed slot, with its carrier tool, record key, field,
+controller, content kind, ``max_chars`` and records, and classifies every
+listed tool as ``read_only`` or ``mutating`` from the domain's
+``TOOL_ACCESS``, since no tool carries MCP annotations.
 
 Each domain has two variants, each a target of its own:
 ``declarations/<domain>/safe/`` and ``declarations/<domain>/unsafe/``
@@ -85,6 +85,7 @@ def runtime_spec(domain: str, variant: str) -> dict[str, Any]:
             {
                 "id": slot.id,
                 "carrier_operation": slot.carrier_operation,
+                "record_key": slot.record_key,
                 "field": slot.field,
                 "controller": slot.controller,
                 "content_kind": slot.content_kind,

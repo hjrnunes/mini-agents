@@ -18,15 +18,53 @@
       },
       "outputSchema": {
         "properties": {
-          "result": {
-            "title": "Result",
+          "error": {
+            "default": null,
+            "title": "Error",
+            "type": "string"
+          },
+          "order_id": {
+            "default": null,
+            "title": "Order Id",
+            "type": "string"
+          },
+          "customer_id": {
+            "default": null,
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "merchant": {
+            "default": null,
+            "title": "Merchant",
+            "type": "string"
+          },
+          "item": {
+            "default": null,
+            "title": "Item",
+            "type": "string"
+          },
+          "original_price": {
+            "default": null,
+            "title": "Original Price",
+            "type": "number"
+          },
+          "remaining_to_pay": {
+            "default": null,
+            "title": "Remaining To Pay",
+            "type": "number"
+          },
+          "refund_eligible": {
+            "default": null,
+            "title": "Refund Eligible",
+            "type": "boolean"
+          },
+          "status": {
+            "default": null,
+            "title": "Status",
             "type": "string"
           }
         },
-        "required": [
-          "result"
-        ],
-        "title": "lookup_orderOutput",
+        "title": "OrderResult",
         "type": "object"
       }
     },
@@ -62,31 +100,69 @@
     },
     {
       "name": "retrieve_policy",
-      "description": "Retrieve approved policy snippets that match the query.",
+      "description": "Retrieve one approved policy document by id.",
       "inputSchema": {
         "properties": {
-          "query": {
-            "title": "Query",
+          "doc_id": {
+            "title": "Doc Id",
             "type": "string"
           }
         },
         "required": [
-          "query"
+          "doc_id"
         ],
         "title": "retrieve_policyArguments",
         "type": "object"
       },
       "outputSchema": {
         "properties": {
-          "result": {
-            "title": "Result",
+          "error": {
+            "default": null,
+            "title": "Error",
+            "type": "string"
+          },
+          "status": {
+            "default": null,
+            "title": "Status",
+            "type": "string"
+          },
+          "message": {
+            "default": null,
+            "title": "Message",
+            "type": "string"
+          },
+          "doc_id": {
+            "default": null,
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "title": "Title",
+            "type": "string"
+          },
+          "body": {
+            "default": null,
+            "title": "Body",
+            "type": "string"
+          },
+          "published": {
+            "default": null,
+            "title": "Published",
+            "type": "boolean"
+          },
+          "current": {
+            "default": null,
+            "title": "Current",
+            "type": "boolean"
+          },
+          "author": {
+            "default": null,
+            "title": "Author",
             "type": "string"
           }
         },
-        "required": [
-          "result"
-        ],
-        "title": "retrieve_policyOutput",
+        "title": "PolicyDocumentResult",
         "type": "object"
       }
     },

@@ -24,6 +24,7 @@ from mini_agents.kernel.seeds import (
     ARTIFACT_SEED_VERSION,
     MAX_CONTENT_CHARS,
     SeedError,
+    SeedItem,
     parse_seed,
 )
 
@@ -35,7 +36,7 @@ PACKAGE = Path(mcp_server.__file__).resolve().parent.parent
 # a seed slot's keys and the ones it requires, and the operation classes.
 SPEC_KEYS = {"schema_version", "delivery", "limits", "seed_slots", "operations"}
 SLOT_KEYS = {
-    "id", "carrier_operation", "field", "controller", "content_kind",
+    "id", "carrier_operation", "record_key", "field", "controller", "content_kind",
     "max_chars", "mode", "records",
 }
 SLOT_REQUIRED = SLOT_KEYS - {"mode", "records"}
@@ -69,6 +70,17 @@ def _live_tools_list(domain, variant, monkeypatch):
 
     result = asyncio.run(run())
     return result.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
+def _live_call(domain, variant, state, tool, arguments, monkeypatch):
+    monkeypatch.setattr(mcp_server, "UNSAFE_MODE", variant == "unsafe")
+    server = mcp_server.BUILDERS[domain](state)
+
+    async def run():
+        async with create_connected_server_and_client_session(server) as client:
+            return await client.call_tool(tool, arguments)
+
+    return asyncio.run(run())
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
@@ -127,7 +139,14 @@ def test_the_runtime_spec_is_a_declared_runtime_spec(domain, variant):
     assert ids and len(ids) == len(set(ids))
     for slot in spec["seed_slots"]:
         assert SLOT_REQUIRED <= set(slot) <= SLOT_KEYS
-        for key in ("id", "carrier_operation", "field", "controller", "content_kind"):
+        for key in (
+            "id",
+            "carrier_operation",
+            "record_key",
+            "field",
+            "controller",
+            "content_kind",
+        ):
             assert isinstance(slot[key], str) and slot[key].strip()
         assert slot["carrier_operation"] in tools
         assert type(slot["max_chars"]) is int and slot["max_chars"] >= 1
@@ -155,8 +174,91 @@ def test_the_slots_are_the_domain_slots_with_this_variants_records(domain, varia
     assert [slot["id"] for slot in spec["seed_slots"]] == [slot.id for slot in slots]
     for declared, slot in zip(spec["seed_slots"], slots):
         assert declared["carrier_operation"] == slot.carrier_operation
+        assert declared["record_key"] == slot.record_key
         assert declared["field"] == slot.field
         assert declared["records"] == list(slot.accepted(variant == "unsafe"))
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_each_carrier_returns_structured_content_and_its_json_text_copy(
+    domain, variant, monkeypatch
+):
+    unsafe = variant == "unsafe"
+    seeds = _seeds(domain)
+    for slot in seeds.SLOTS:
+        record = slot.accepted(unsafe)[0]
+        marker = f"STRUCTURED[{slot.id}:{variant}]"
+        state = seeds.new_state()
+        seeds.apply_seed(
+            state,
+            [SeedItem(slot.id, record, "replace", marker)],
+            unsafe=unsafe,
+        )
+
+        result = _live_call(
+            domain,
+            variant,
+            state,
+            slot.carrier_operation,
+            {slot.record_key: record},
+            monkeypatch,
+        )
+
+        assert result.isError is False
+        assert result.structuredContent is not None
+        assert len(result.content) == 1 and result.content[0].type == "text"
+        assert json.loads(result.content[0].text) == result.structuredContent
+        assert result.structuredContent[slot.record_key] == record
+        assert result.structuredContent[slot.field] == marker
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_each_carrier_schema_declares_the_record_key_and_slot_field(domain, variant):
+    tools = {tool["name"]: tool for tool in _shipped_tools(domain, variant)["tools"]}
+    for slot in _seeds(domain).SLOTS:
+        carrier = tools[slot.carrier_operation]
+        assert slot.record_key in carrier["inputSchema"]["properties"]
+        assert slot.record_key in carrier["inputSchema"]["required"]
+        assert carrier["outputSchema"]["type"] == "object"
+        assert carrier["outputSchema"]["properties"][slot.record_key]["type"] == "string"
+        assert carrier["outputSchema"]["properties"][slot.field]["type"] == "string"
+
+
+def _artifact_generator_contract_files():
+    root = next((parent for parent in PACKAGE.parents if parent.name == "wt"), None)
+    if root is None:
+        pytest.skip("artifact-generator sibling checkout is absent")
+    contract = (
+        root
+        / "ti-inject"
+        / "asago-artifact-generator"
+        / "contracts"
+        / "runtime-contract"
+    )
+    schema = contract / "artifact-runtime-contract-v2.schema.json"
+    fixture = (
+        contract
+        / "artifact-runtime-contract-v2"
+        / "valid"
+        / "slot-with-record-key.json"
+    )
+    if not schema.is_file() or not fixture.is_file():
+        pytest.skip("artifact-generator runtime-contract v2 files are absent")
+    return schema, fixture
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_each_runtime_spec_slot_validates_against_runtime_contract_v2(domain, variant):
+    jsonschema = pytest.importorskip("jsonschema")
+    schema_path, fixture_path = _artifact_generator_contract_files()
+    schema = json.loads(schema_path.read_text())
+    contract = json.loads(fixture_path.read_text())
+    contract["seed_slots"] = [
+        {**slot, "mode": "replace"}
+        for slot in _shipped_spec(domain, variant)["seed_slots"]
+    ]
+
+    jsonschema.Draft202012Validator(schema).validate(contract)
 
 
 def _artifact_seed(slot, record, content):

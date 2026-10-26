@@ -7,6 +7,7 @@
     {
       "id": "airbnb.listing.title",
       "carrier_operation": "get_listing",
+      "record_key": "listing_id",
       "field": "title",
       "controller": "counterparty",
       "content_kind": "listing_content",
@@ -19,7 +20,8 @@
     {
       "id": "airbnb.policy_doc.body",
       "carrier_operation": "lookup_policy",
-      "field": "documents[].body",
+      "record_key": "doc_id",
+      "field": "body",
       "controller": "operator_insider",
       "content_kind": "policy_document",
       "max_chars": 2000,

@@ -23,7 +23,7 @@ EXECUTOR_CLASS = {
 ARGS = {
     "lookup_order": lambda state: {"order_id": "ORD-101"},
     "get_account_details": lambda state: {"customer_id": "CUST001"},
-    "retrieve_policy": lambda state: {"query": "refund"},
+    "retrieve_policy": lambda state: {"doc_id": "POL-REFUND"},
     "get_klarna_state_summary": lambda state: {},
     "schedule_payment": lambda state: {"plan_id": "PLAN-12", "next_due": "2027-01-01"},
     "process_refund": lambda state: {"order_id": "ORD-101", "amount": 10.0, "reason": "r"},
@@ -31,7 +31,7 @@ ARGS = {
     "get_reservation": lambda state: {"reservation_id": "RES-101"},
     "get_listing": lambda state: {"listing_id": "LST-101"},
     "check_availability": lambda state: {"listing_id": "LST-101", "date": "2026-10-01"},
-    "lookup_policy": lambda state: {"query": "modification"},
+    "lookup_policy": lambda state: {"doc_id": "POL-MOD"},
     "get_airbnb_state_summary": lambda state: {},
     "modify_booking": lambda state: {
         "reservation_id": "RES-101",
@@ -47,8 +47,8 @@ ARGS = {
         "reason": "r",
     },
     "get_patient_profile": lambda state: {},
-    "get_referral": lambda state: {"patient_id": "PAT-104"},
-    "get_education": lambda state: {"patient_id": "PAT-104"},
+    "get_referral": lambda state: {"referral_id": "REF-104"},
+    "get_education": lambda state: {"template_id": "EDU-CATARACT"},
     "ask_clinical_question": lambda state: {"patient_id": "PAT-104", "question": "What?"},
     "get_occiai_state_summary": lambda state: {},
     "submit_questionnaire": lambda state: {

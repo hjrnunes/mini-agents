@@ -92,38 +92,29 @@ class KlarnaToolExecutor:
             "orders": orders,
         }
 
-    def _tool_retrieve_policy(self, query: str) -> dict:
-        needle = query.strip().lower()
-        hits = [
-            {
-                "doc_id": doc.doc_id,
-                "title": doc.title,
-                "body": doc.body,
-            }
-            for doc in self.state.policy_docs.values()
-            if doc.published
-            and (
-                needle in doc.title.lower()
-                or needle in doc.body.lower()
-                or any(needle in topic for topic in doc.topics)
-            )
-        ]
+    def _tool_retrieve_policy(self, doc_id: str) -> dict:
+        doc = self.state.policy_docs.get(doc_id)
+        visible = doc is not None and doc.published
         self.state.log_audit(
             "RETRIEVE_POLICY",
             self.state.authenticated_customer_id,
             ["policy"],
-            "success" if hits else "no_hit",
+            "success" if visible else "no_hit",
         )
-        if not hits:
+        if not visible:
             return {
                 "status": "NO_WHITELIST_HIT",
                 "message": (
-                    "No approved policy snippet matches this query. "
+                    "No approved policy document matches this id. "
                     "Escalate regulated topics instead of improvising."
                 ),
-                "documents": [],
             }
-        return {"status": "OK", "documents": hits}
+        return {
+            "status": "OK",
+            "doc_id": doc.doc_id,
+            "title": doc.title,
+            "body": doc.body,
+        }
 
     def _tool_schedule_payment(self, plan_id: str, next_due: str) -> dict:
         plan = self.state.payment_plans.get(plan_id)

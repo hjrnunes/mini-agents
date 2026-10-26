@@ -38,30 +38,20 @@ EXECUTORS = {
     "occiai": {False: OcciAIToolExecutor, True: UnsafeOcciAIToolExecutor},
 }
 
-PATIENT_OF_REFERRAL = {"REF-101": "PAT-101", "REF-104": "PAT-104", "REF-201": "PAT-201"}
-PATIENT_OF_TEMPLATE = {"EDU-GYNAE": "PAT-201"}
-
 # Read-tool arguments, keyed by tool name. A callable takes the seeded record id.
-POLICY_QUERY = {
-    "POL-REFUND": "refund",
-    "POL-SCHEDULE": "schedule",
-    "POL-FEES-DRAFT": "fees",
-    "POL-MOD": "modification",
-    "POL-HOST-DRAFT": "house-rules",
-}
 READ_ARGS = {
     "lookup_order": lambda record: {"order_id": record},
     "get_account_details": lambda record: {"customer_id": "CUST001"},
-    "retrieve_policy": lambda record: {"query": POLICY_QUERY.get(record, "refund")},
+    "retrieve_policy": lambda record: {"doc_id": record},
     "get_klarna_state_summary": lambda record: {},
     "get_reservation": lambda record: {"reservation_id": "RES-101"},
     "get_listing": lambda record: {"listing_id": record},
     "check_availability": lambda record: {"listing_id": "LST-101", "date": "2026-10-01"},
-    "lookup_policy": lambda record: {"query": POLICY_QUERY.get(record, "modification")},
+    "lookup_policy": lambda record: {"doc_id": record},
     "get_airbnb_state_summary": lambda record: {},
     "get_patient_profile": lambda record: {},
-    "get_referral": lambda record: {"patient_id": PATIENT_OF_REFERRAL.get(record, "PAT-104")},
-    "get_education": lambda record: {"patient_id": PATIENT_OF_TEMPLATE.get(record, "PAT-104")},
+    "get_referral": lambda record: {"referral_id": record},
+    "get_education": lambda record: {"template_id": record},
     "ask_clinical_question": lambda record: {
         "patient_id": "PAT-104",
         "question": "What happens at the clinic?",
@@ -174,6 +164,9 @@ def test_every_slot_is_exercised_by_the_call_tables(domain):
     for slot in seeds.SLOTS:
         assert slot.carrier_operation in READ_ARGS, slot.id
         assert seeds.TOOL_ACCESS[slot.carrier_operation] == "read", slot.id
+        assert (
+            slot.record_key in READ_ARGS[slot.carrier_operation](slot.records[0])
+        ), slot.id
         assert slot.records and slot.unsafe_records, slot.id
         assert len(slot.id.split(".")) == 3 and slot.id.startswith(f"{domain}."), slot.id
     assert set(READ_ARGS) >= {
@@ -209,7 +202,7 @@ def test_a_safe_education_seed_reaches_the_twin_agent(tmp_path):
 
     state = seeded_state("occiai", str(seed_file), unsafe=True)
     result = UnsafeOcciAIToolExecutor(state).execute(
-        "get_education", {"patient_id": "PAT-104"}
+        "get_education", {"template_id": "EDU-CATARACT"}
     )
 
     assert result["script"] == "PLANTED-ON-THE-TWIN"

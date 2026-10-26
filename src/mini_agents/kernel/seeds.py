@@ -82,15 +82,18 @@ class SeedDocument:
 class Slot:
     """One text field of one record kind that a read tool returns to the agent.
 
-    ``records`` and ``unsafe_records`` list the record ids the hook accepts in
-    safe and unsafe mode. They differ where the two executors expose different
-    records: a seed on a record the carrier never returns would reach no agent.
+    ``record_key`` is the id property shared by the carrier's arguments and
+    result. ``records`` and ``unsafe_records`` list the record ids the hook
+    accepts in safe and unsafe mode. They differ where the two executors expose
+    different records: a seed on a record the carrier never returns would
+    reach no agent.
     ``max_chars`` bounds one item's content; ``seed.schema.json`` states the
     same limit for every slot.
     """
 
     id: str
     carrier_operation: str
+    record_key: str
     other_readers: tuple[str, ...]
     field: str
     controller: str

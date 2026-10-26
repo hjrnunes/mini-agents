@@ -7,6 +7,7 @@
     {
       "id": "occiai.referral.reason",
       "carrier_operation": "get_referral",
+      "record_key": "referral_id",
       "field": "reason",
       "controller": "third_party",
       "content_kind": "clinical_note",
@@ -20,6 +21,7 @@
     {
       "id": "occiai.education.script",
       "carrier_operation": "get_education",
+      "record_key": "template_id",
       "field": "script",
       "controller": "operator_insider",
       "content_kind": "education_material",

@@ -48,15 +48,51 @@
       },
       "outputSchema": {
         "properties": {
-          "result": {
-            "title": "Result",
+          "error": {
+            "default": null,
+            "title": "Error",
+            "type": "string"
+          },
+          "listing_id": {
+            "default": null,
+            "title": "Listing Id",
+            "type": "string"
+          },
+          "host_id": {
+            "default": null,
+            "title": "Host Id",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "title": "Title",
+            "type": "string"
+          },
+          "occupancy": {
+            "default": null,
+            "title": "Occupancy",
+            "type": "integer"
+          },
+          "city": {
+            "default": null,
+            "title": "City",
+            "type": "string"
+          },
+          "blocked_dates": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocked Dates",
+            "type": "array"
+          },
+          "status": {
+            "default": null,
+            "title": "Status",
             "type": "string"
           }
         },
-        "required": [
-          "result"
-        ],
-        "title": "get_listingOutput",
+        "title": "ListingResult",
         "type": "object"
       }
     },
@@ -97,31 +133,69 @@
     },
     {
       "name": "lookup_policy",
-      "description": "Retrieve current Airbnb policy snippets.",
+      "description": "Retrieve one current Airbnb policy document by id.",
       "inputSchema": {
         "properties": {
-          "query": {
-            "title": "Query",
+          "doc_id": {
+            "title": "Doc Id",
             "type": "string"
           }
         },
         "required": [
-          "query"
+          "doc_id"
         ],
         "title": "lookup_policyArguments",
         "type": "object"
       },
       "outputSchema": {
         "properties": {
-          "result": {
-            "title": "Result",
+          "error": {
+            "default": null,
+            "title": "Error",
+            "type": "string"
+          },
+          "status": {
+            "default": null,
+            "title": "Status",
+            "type": "string"
+          },
+          "message": {
+            "default": null,
+            "title": "Message",
+            "type": "string"
+          },
+          "doc_id": {
+            "default": null,
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "title": "Title",
+            "type": "string"
+          },
+          "body": {
+            "default": null,
+            "title": "Body",
+            "type": "string"
+          },
+          "published": {
+            "default": null,
+            "title": "Published",
+            "type": "boolean"
+          },
+          "current": {
+            "default": null,
+            "title": "Current",
+            "type": "boolean"
+          },
+          "author": {
+            "default": null,
+            "title": "Author",
             "type": "string"
           }
         },
-        "required": [
-          "result"
-        ],
-        "title": "lookup_policyOutput",
+        "title": "PolicyDocumentResult",
         "type": "object"
       }
     },

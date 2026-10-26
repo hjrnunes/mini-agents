@@ -17,6 +17,7 @@ SLOTS = (
     Slot(
         id="airbnb.listing.title",
         carrier_operation="get_listing",
+        record_key="listing_id",
         other_readers=(),
         field="title",
         controller="counterparty",
@@ -29,8 +30,9 @@ SLOTS = (
     Slot(
         id="airbnb.policy_doc.body",
         carrier_operation="lookup_policy",
+        record_key="doc_id",
         other_readers=(),
-        field="documents[].body",
+        field="body",
         controller="operator_insider",
         content_kind="policy_document",
         records=("POL-MOD",),

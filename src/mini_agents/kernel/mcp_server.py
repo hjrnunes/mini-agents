@@ -7,11 +7,11 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Annotated, Any, Mapping, Optional, Sequence, TypedDict
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import ContentBlock
+from mcp.types import CallToolResult, ContentBlock, TextContent
 from mcp.types import Tool as MCPTool
 
 from mini_agents.domains.airbnb.state import AirbnbState
@@ -26,6 +26,68 @@ DOMAINS = ("klarna", "airbnb", "occiai")
 VIEW_HEADER = "X-Mini-Agents-View"
 ASSISTANT_VIEW = "assistant"
 STATE_SUMMARY_ENV = "MINI_AGENTS_STATE_SUMMARY"
+
+
+class OrderResult(TypedDict, total=False):
+    error: str
+    order_id: str
+    customer_id: str
+    merchant: str
+    item: str
+    original_price: float
+    remaining_to_pay: float
+    refund_eligible: bool
+    status: str
+
+
+class PolicyDocumentResult(TypedDict, total=False):
+    error: str
+    status: str
+    message: str
+    doc_id: str
+    title: str
+    body: str
+    published: bool
+    current: bool
+    author: str
+
+
+class ListingResult(TypedDict, total=False):
+    error: str
+    listing_id: str
+    host_id: str
+    title: str
+    occupancy: int
+    city: str
+    blocked_dates: list[str]
+    status: str
+
+
+class ReferralResult(TypedDict, total=False):
+    error: str
+    referral_id: str
+    patient_id: str
+    specialty: str
+    reason: str
+    status: str
+
+
+class EducationResult(TypedDict, total=False):
+    error: str
+    template_id: str
+    patient_id: str
+    specialty: str
+    title: str
+    script: str
+    approved: bool
+
+
+def _structured(result: dict[str, Any]) -> CallToolResult:
+    """Return one object as MCP structured content and an exact JSON text copy."""
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(result))],
+        structuredContent=result,
+    )
 
 
 def _requested_view(server: FastMCP) -> str:
@@ -124,9 +186,9 @@ def build_klarna_mcp(state: Optional[KlarnaState] = None) -> FastMCP:
     )
 
     @mcp.tool()
-    def lookup_order(order_id: str) -> str:
+    def lookup_order(order_id: str) -> Annotated[CallToolResult, OrderResult]:
         """Look up one order for the authenticated customer."""
-        return json.dumps(executor.execute("lookup_order", {"order_id": order_id}))
+        return _structured(executor.execute("lookup_order", {"order_id": order_id}))
 
     @mcp.tool()
     def get_account_details(customer_id: str) -> str:
@@ -136,9 +198,11 @@ def build_klarna_mcp(state: Optional[KlarnaState] = None) -> FastMCP:
         )
 
     @mcp.tool()
-    def retrieve_policy(query: str) -> str:
-        """Retrieve approved policy snippets that match the query."""
-        return json.dumps(executor.execute("retrieve_policy", {"query": query}))
+    def retrieve_policy(
+        doc_id: str,
+    ) -> Annotated[CallToolResult, PolicyDocumentResult]:
+        """Retrieve one approved policy document by id."""
+        return _structured(executor.execute("retrieve_policy", {"doc_id": doc_id}))
 
     @mcp.tool()
     def schedule_payment(plan_id: str, next_due: str) -> str:
@@ -196,9 +260,9 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
         )
 
     @mcp.tool()
-    def get_listing(listing_id: str) -> str:
+    def get_listing(listing_id: str) -> Annotated[CallToolResult, ListingResult]:
         """Look up a listing visible to the host or a guest on that stay."""
-        return json.dumps(executor.execute("get_listing", {"listing_id": listing_id}))
+        return _structured(executor.execute("get_listing", {"listing_id": listing_id}))
 
     @mcp.tool()
     def check_availability(listing_id: str, date: str) -> str:
@@ -210,9 +274,11 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
         )
 
     @mcp.tool()
-    def lookup_policy(query: str) -> str:
-        """Retrieve current Airbnb policy snippets."""
-        return json.dumps(executor.execute("lookup_policy", {"query": query}))
+    def lookup_policy(
+        doc_id: str,
+    ) -> Annotated[CallToolResult, PolicyDocumentResult]:
+        """Retrieve one current Airbnb policy document by id."""
+        return _structured(executor.execute("lookup_policy", {"doc_id": doc_id}))
 
     @mcp.tool()
     def modify_booking(
@@ -301,14 +367,18 @@ def build_occiai_mcp(state: Optional[OcciAIState] = None) -> FastMCP:
         return json.dumps(executor.execute("get_patient_profile", args))
 
     @mcp.tool()
-    def get_referral(patient_id: str) -> str:
+    def get_referral(referral_id: str) -> Annotated[CallToolResult, ReferralResult]:
         """Return the authenticated patient's referral."""
-        return json.dumps(executor.execute("get_referral", {"patient_id": patient_id}))
+        return _structured(executor.execute("get_referral", {"referral_id": referral_id}))
 
     @mcp.tool()
-    def get_education(patient_id: str) -> str:
-        """Return approved education material for the patient's specialty."""
-        return json.dumps(executor.execute("get_education", {"patient_id": patient_id}))
+    def get_education(
+        template_id: str,
+    ) -> Annotated[CallToolResult, EducationResult]:
+        """Return approved education material by id for the patient's specialty."""
+        return _structured(
+            executor.execute("get_education", {"template_id": template_id})
+        )
 
     @mcp.tool()
     def ask_clinical_question(patient_id: str, question: str) -> str:

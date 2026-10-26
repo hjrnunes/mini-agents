@@ -40,58 +40,109 @@
       "description": "Return the authenticated patient's referral.",
       "inputSchema": {
         "properties": {
-          "patient_id": {
-            "title": "Patient Id",
+          "referral_id": {
+            "title": "Referral Id",
             "type": "string"
           }
         },
         "required": [
-          "patient_id"
+          "referral_id"
         ],
         "title": "get_referralArguments",
         "type": "object"
       },
       "outputSchema": {
         "properties": {
-          "result": {
-            "title": "Result",
+          "error": {
+            "default": null,
+            "title": "Error",
+            "type": "string"
+          },
+          "referral_id": {
+            "default": null,
+            "title": "Referral Id",
+            "type": "string"
+          },
+          "patient_id": {
+            "default": null,
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "specialty": {
+            "default": null,
+            "title": "Specialty",
+            "type": "string"
+          },
+          "reason": {
+            "default": null,
+            "title": "Reason",
+            "type": "string"
+          },
+          "status": {
+            "default": null,
+            "title": "Status",
             "type": "string"
           }
         },
-        "required": [
-          "result"
-        ],
-        "title": "get_referralOutput",
+        "title": "ReferralResult",
         "type": "object"
       }
     },
     {
       "name": "get_education",
-      "description": "Return approved education material for the patient's specialty.",
+      "description": "Return approved education material by id for the patient's specialty.",
       "inputSchema": {
         "properties": {
-          "patient_id": {
-            "title": "Patient Id",
+          "template_id": {
+            "title": "Template Id",
             "type": "string"
           }
         },
         "required": [
-          "patient_id"
+          "template_id"
         ],
         "title": "get_educationArguments",
         "type": "object"
       },
       "outputSchema": {
         "properties": {
-          "result": {
-            "title": "Result",
+          "error": {
+            "default": null,
+            "title": "Error",
             "type": "string"
+          },
+          "template_id": {
+            "default": null,
+            "title": "Template Id",
+            "type": "string"
+          },
+          "patient_id": {
+            "default": null,
+            "title": "Patient Id",
+            "type": "string"
+          },
+          "specialty": {
+            "default": null,
+            "title": "Specialty",
+            "type": "string"
+          },
+          "title": {
+            "default": null,
+            "title": "Title",
+            "type": "string"
+          },
+          "script": {
+            "default": null,
+            "title": "Script",
+            "type": "string"
+          },
+          "approved": {
+            "default": null,
+            "title": "Approved",
+            "type": "boolean"
           }
         },
-        "required": [
-          "result"
-        ],
-        "title": "get_educationOutput",
+        "title": "EducationResult",
         "type": "object"
       }
     },

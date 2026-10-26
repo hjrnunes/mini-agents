@@ -69,7 +69,7 @@
         {
           "id": "klarna.policy_doc.body",
           "carrier_operation": "retrieve_policy",
-          "field": "documents[].body",
+          "field": "body",
           "controller": "operator_insider",
           "content_kind": "policy_document",
           "records": [
@@ -156,7 +156,7 @@
         {
           "id": "airbnb.policy_doc.body",
           "carrier_operation": "lookup_policy",
-          "field": "documents[].body",
+          "field": "body",
           "controller": "operator_insider",
           "content_kind": "policy_document",
           "records": [

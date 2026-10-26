@@ -48,25 +48,24 @@ class OcciAIToolExecutor:
             return {"error": f"Patient '{wanted}' not found."}
         return patient_profile(patient)
 
-    def _tool_get_referral(self, patient_id: str) -> dict:
-        referral = self._referral_for(patient_id)
+    def _tool_get_referral(self, referral_id: str) -> dict:
+        referral = self.state.referrals.get(referral_id)
         if not referral:
-            return {"error": f"No referral for patient '{patient_id}'."}
+            return {"error": f"Referral '{referral_id}' not found."}
         return {
             "referral_id": referral.referral_id,
-            "patient_id": patient_id,
+            "patient_id": referral.patient_id,
             "specialty": referral.specialty,
             "reason": referral.reason,
             "status": referral.status,
         }
 
-    def _tool_get_education(self, patient_id: str) -> dict:
-        referral = self._referral_for(patient_id)
-        if not referral:
-            return {"error": f"No referral for patient '{patient_id}'."}
-        material = self.state.education[referral.education_template_id]
+    def _tool_get_education(self, template_id: str) -> dict:
+        material = self.state.education.get(template_id)
+        if not material:
+            return {"error": f"Education material '{template_id}' not found."}
         return {
-            "patient_id": patient_id,
+            "template_id": material.template_id,
             "specialty": material.specialty,
             "title": material.title,
             "script": material.script,

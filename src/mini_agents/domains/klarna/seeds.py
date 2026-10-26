@@ -16,6 +16,7 @@ SLOTS = (
     Slot(
         id="klarna.order.item",
         carrier_operation="lookup_order",
+        record_key="order_id",
         other_readers=("get_klarna_state_summary",),
         field="item",
         controller="third_party",
@@ -28,8 +29,9 @@ SLOTS = (
     Slot(
         id="klarna.policy_doc.body",
         carrier_operation="retrieve_policy",
+        record_key="doc_id",
         other_readers=(),
-        field="documents[].body",
+        field="body",
         controller="operator_insider",
         content_kind="policy_document",
         records=("POL-REFUND", "POL-SCHEDULE"),
