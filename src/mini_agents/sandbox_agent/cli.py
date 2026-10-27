@@ -436,9 +436,12 @@ class Agent:
                 f"http://{LOOPBACK_HOST}:{state.ogx.port}",
                 body,
                 timeout=self.settings.request_timeout,
+                secret=endpoint.token if endpoint is not None else None,
             )
         except AgentFailure as failure:
-            # OGX's error body may echo the request, the token with it.
+            # OGX's error body may echo the request, the token with it;
+            # create_response redacts it before cutting the body short, and
+            # this catches any detail it did not build.
             raise redact(failure, endpoint) from None
         model = response.get("model")
         return Turn(

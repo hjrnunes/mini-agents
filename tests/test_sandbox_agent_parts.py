@@ -758,7 +758,7 @@ def test_the_console_script_is_declared():
 def _answer(monkeypatch, sent=None):
     """Stand in for OGX in-process: answer every request as turn 2."""
 
-    def create(url, body, *, timeout):
+    def create(url, body, *, timeout, secret=None):
         if sent is not None:
             sent.append(body)
         return {

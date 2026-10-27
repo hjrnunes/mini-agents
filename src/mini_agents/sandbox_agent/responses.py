@@ -22,6 +22,7 @@ from mini_agents.sandbox_agent.failures import (
     GATEWAY_RESPONSE_INVALID,
     AgentFailure,
 )
+from mini_agents.sandbox_agent.tool_endpoint import redact_text
 
 MCP_SERVER_LABEL = "midojo"
 RESPONSES_PATH = "/v1/responses"
@@ -85,11 +86,13 @@ def create_response(
     *,
     timeout: float,
     client: httpx.Client | None = None,
+    secret: str | None = None,
 ) -> dict[str, Any]:
     """POST the body to OGX; return the response or fail with a named reason.
 
     Every failure here comes after the request was sent, so it counts one
-    gateway request.
+    gateway request. ``secret`` (the interceptor's token) is taken out of
+    every failure detail, out of OGX's answer before it is cut short.
     """
 
     url = gateway_url.rstrip("/") + RESPONSES_PATH
@@ -101,7 +104,7 @@ def create_response(
         except httpx.HTTPError as exc:
             raise AgentFailure(
                 GATEWAY_REQUEST_FAILED,
-                f"POST {url}: {type(exc).__name__}: {exc}",
+                redact_text(f"POST {url}: {type(exc).__name__}: {exc}", secret),
                 gateway_requests=1,
             ) from exc
     finally:
@@ -110,7 +113,8 @@ def create_response(
     if not reply.is_success:
         raise AgentFailure(
             GATEWAY_REQUEST_FAILED,
-            f"POST {url}: HTTP {reply.status_code} {reply.text[:_BODY_EXCERPT]}".rstrip(),
+            f"POST {url}: HTTP {reply.status_code} "
+            f"{redact_text(reply.text, secret)[:_BODY_EXCERPT]}".rstrip(),
             gateway_requests=1,
         )
     try:
@@ -130,7 +134,7 @@ def create_response(
     if response.get("status") == "failed" or response.get("error"):
         raise AgentFailure(
             GATEWAY_RESPONSE_FAILED,
-            f"response {response['id']}: {response.get('error')!r}",
+            redact_text(f"response {response['id']}: {response.get('error')!r}", secret),
             gateway_requests=1,
         )
     return response

@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 
+import httpx
 import pytest
 
 from mini_agents.sandbox_agent import cli, failures
 from mini_agents.sandbox_agent.failures import AgentFailure
-from mini_agents.sandbox_agent.responses import request_body
+from mini_agents.sandbox_agent.responses import create_response, request_body
 from mini_agents.sandbox_agent.state import AgentState, Process, Turn, load_state, save_state
 from mini_agents.sandbox_agent.summary import summary_path
 from mini_agents.sandbox_agent.tool_endpoint import (
@@ -169,7 +170,7 @@ def _main(tmp_path, environ):
 
 
 def _answer(monkeypatch, sent):
-    def create(url, body, *, timeout):
+    def create(url, body, *, timeout, secret=None):
         sent.append(body)
         return {
             "id": "resp-2",
@@ -245,7 +246,7 @@ def test_a_half_configured_interceptor_fails_the_first_turn_before_anything_star
 def test_a_gateway_failure_that_echoes_the_token_is_redacted(tmp_path, monkeypatch, capsys):
     save_state(_state(), tmp_path / "agent-state")
 
-    def create(url, body, *, timeout):
+    def create(url, body, *, timeout, secret=None):
         raise AgentFailure(
             failures.GATEWAY_REQUEST_FAILED,
             f"POST {url}: HTTP 400 {json.dumps(body)}",
@@ -261,3 +262,65 @@ def test_a_gateway_failure_that_echoes_the_token_is_redacted(tmp_path, monkeypat
     turn = load_state(tmp_path / "agent-state").turns[-1]
     assert turn.exit_reason == "gateway-request-failed" and turn.gateway_requests == 1
     assert TOKEN not in _files_text(tmp_path / "agent-state", tmp_path / "workdir")
+
+
+# A token echoed across the cut OGX's answer gets in a failure detail
+
+
+STRADDLER = "Zq8vK2mP4rT7wX1y"
+
+
+def _fragments(text, secret=STRADDLER, size=4):
+    """Every piece of ``secret`` of ``size`` characters or more in ``text``."""
+
+    return [
+        secret[start:end]
+        for start in range(len(secret))
+        for end in range(start + size, len(secret) + 1)
+        if secret[start:end] in text
+    ]
+
+
+def _straddling_gateway():
+    """OGX answering 400 with the token across the 200-character cut."""
+
+    prefix = "x" * 192
+    body = prefix + STRADDLER + " rest of the echoed request"
+    assert len(prefix) < 200 < len(prefix) + len(STRADDLER)
+    return httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(400, text=body)))
+
+
+def test_an_unredacted_cut_would_leak_a_prefix_of_the_token():
+    # Without the secret, the cut leaves a piece a later replacement misses.
+    with pytest.raises(AgentFailure) as raised:
+        create_response("http://127.0.0.1:9", {}, timeout=1, client=_straddling_gateway())
+    assert STRADDLER not in raised.value.detail
+    assert _fragments(raised.value.detail)
+
+
+def test_a_token_across_the_cut_leaves_no_fragment():
+    with pytest.raises(AgentFailure) as raised:
+        create_response(
+            "http://127.0.0.1:9", {}, timeout=1, client=_straddling_gateway(), secret=STRADDLER
+        )
+    assert raised.value.reason == failures.GATEWAY_REQUEST_FAILED
+    assert raised.value.detail.startswith("POST http://127.0.0.1:9/v1/responses: HTTP 400 xxx")
+    assert _fragments(raised.value.detail) == []
+
+
+def test_a_turn_whose_gateway_echoes_the_token_across_the_cut_leaks_no_fragment(
+    tmp_path, monkeypatch, capsys
+):
+    save_state(_state(), tmp_path / "agent-state")
+    gateway = _straddling_gateway()
+
+    def create(url, body, *, timeout, secret=None):
+        return create_response(url, body, timeout=timeout, client=gateway, secret=secret)
+
+    monkeypatch.setattr(cli, "create_response", create)
+    assert _main(tmp_path, {**SECOND, TOOL_URL: URL, TOOL_TOKEN: STRADDLER}) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.startswith("mini-agents-sandbox-agent: gateway-request-failed: ")
+    assert _fragments(out + err) == []
+    assert _fragments(_files_text(tmp_path / "agent-state", tmp_path / "workdir")) == []

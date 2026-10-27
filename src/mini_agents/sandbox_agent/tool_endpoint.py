@@ -15,7 +15,8 @@ server in the sandbox. A variable set to an empty or blank value counts as
 unset.
 
 The token stays out of every message: the endpoint's ``repr`` leaves it out,
-and ``redact`` takes it out of a failure's detail.
+``redact_text`` takes it out of a gateway's answer before it is cut short, and
+``redact`` out of a failure's detail.
 """
 
 from __future__ import annotations
@@ -66,6 +67,14 @@ def read_tool_endpoint(environ: Mapping[str, str]) -> ToolEndpoint | None:
     return ToolEndpoint(url=url, token=token)
 
 
+def redact_text(text: str, secret: str | None) -> str:
+    """``text`` with ``secret`` replaced by ``REDACTED``. Redact before
+    cutting a text short: a cut through the secret leaves a prefix no later
+    replacement matches."""
+
+    return text.replace(secret, REDACTED) if secret else text
+
+
 def redact(failure: AgentFailure, endpoint: ToolEndpoint | None) -> AgentFailure:
     """``failure`` with the token replaced by ``REDACTED`` in its detail."""
 
@@ -73,6 +82,6 @@ def redact(failure: AgentFailure, endpoint: ToolEndpoint | None) -> AgentFailure
         return failure
     return AgentFailure(
         failure.reason,
-        failure.detail.replace(endpoint.token, REDACTED),
+        redact_text(failure.detail, endpoint.token),
         gateway_requests=failure.gateway_requests,
     )
