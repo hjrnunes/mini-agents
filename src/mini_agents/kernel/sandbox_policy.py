@@ -11,8 +11,7 @@ interpreter copy, because OpenShell matches the resolved executable:
 
 A port slot is a JSON string exactly equal to its name; the consumer replaces
 it with the port as an integer. ``fill_policy`` does that and refuses a
-template that lacks either slot. ``scripts/gen_midojo_base.py`` copies the
-template verbatim into the ``runtime`` block of ``midojo-base.json``.
+template that lacks either slot.
 """
 
 from __future__ import annotations

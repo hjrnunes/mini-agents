@@ -152,22 +152,21 @@ A slot is a JSON string exactly equal to its name, `"<control_plane_port>"` or
 `mini_agents.kernel.sandbox_policy.fill_policy(control_plane_port=...,
 relay_port=...)` does that and refuses bad ports.
 
-**Runtime block.** `midojo-base.json` carries the template in a top-level
-`runtime` block that every target shares, next to the image and the agent
-command. `scripts/gen_midojo_base.py` copies the policy from the template;
-edit `sandbox-policy.json`, then regenerate.
+**Agent runtime.** A caller that runs a domain in this image under MiDojo's
+openshell runtime supplies the image, the agent command and the policy, the
+template with its slots filled:
 
 ```json
 "runtime": {
   "image": "<image_id>",
   "agent_command": ["/opt/app-root/.venv/bin/mini-agents-sandbox-agent", "--domain", "<domain>"],
-  "policy": { "...": "sandbox-policy.json, port slots unfilled" }
+  "policy": { "...": "sandbox-policy.json, port slots filled" }
 }
 ```
 
 `<image_id>` takes the bare image ID, `sha256:<id>` from
 `docker image inspect <tag> --format '{{.Id}}'`. Never `name@sha256:`: it
-makes OpenShell try a pull. `<domain>` takes the target's key in `targets`;
+makes OpenShell try a pull. `<domain>` is `klarna`, `airbnb` or `occiai`;
 MiDojo appends the user message to the agent command.
 
 **Smoke checks.** `scripts/smoke_sandbox_image.sh` runs each check in its own

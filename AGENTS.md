@@ -46,8 +46,8 @@ Touch, in order: `domains/<name>/` (`state.py`, `tools.py`, `tools_unsafe.py`,
 `seeds.py`), `mcp_server.py` (executor fn, builder, `BUILDERS`),
 `kernel/stack.py` (`MCP_SERVERS`), `ogx-config.yaml` and `docker-compose.yml`
 (the two ports, safe then unsafe), then regenerate the manifest with
-`uv run python scripts/gen_manifest.py`, `uv run python scripts/gen_midojo_base.py`
-and `uv run python scripts/gen_declarations.py`. A domain missing from `stack.py`
+`uv run python scripts/gen_manifest.py` and
+`uv run python scripts/gen_declarations.py`. A domain missing from `stack.py`
 starts nowhere and fails silently — check both files before declaring done.
 
 **Adding a tool** also needs an entry in the domain's `seeds.py` `TOOL_ACCESS`
@@ -81,14 +81,6 @@ each variant's records, and every listed tool's operation class from
 `TOOL_ACCESS`). Regenerate them with `uv run python scripts/gen_declarations.py`
 after a tool, its description or arguments, a slot or a `TOOL_ACCESS` entry
 changes; `tests/test_declarations.py` checks them against the live servers.
-
-**MiDojo base.** `src/mini_agents/midojo-base.json` holds each domain's default
-ledger (`State.to_environment()`), its seed slots and its tool access, for the
-consumer's suite compiler. Regenerate it with
-`uv run python scripts/gen_midojo_base.py` whenever a state field, a slot or a
-`TOOL_ACCESS` entry changes; do not edit it by hand. A new state attribute goes
-into `ENVIRONMENT_ATTRIBUTES` and `RECORD_CONTAINERS` in that `state.py`, and no
-ledger text may look like `{word:word}` (MiDojo would blank it).
 
 ## Testing
 
