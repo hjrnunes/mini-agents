@@ -477,6 +477,30 @@ The file is in one of two formats, told apart by `schema_version`:
 Airbnb has no host-written policy or guest-message slot. `lookup_policy` hides
 documents that Airbnb did not author, and no read tool returns a message.
 
+## Reset (a fresh start)
+
+A fresh start is the reset; there is no reset command. A server keeps its
+ledger in memory only, plants `--seed-file` only while it starts, and reads
+nothing back from disk, so stopping it and starting it again with the same
+arguments gives the same initial ledger as the first start: the domain's
+default fixture, plus the same seed when the same seed file is passed. Only
+`session_id` is new on each start. A `mini-agents-seed-v1` start rewrites
+`<seed-file>.applied.json`.
+
+A caller that needs a known starting state, for example before each test
+package, starts one server per package:
+
+```bash
+uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
+# ... run the package, then stop the process and start it again
+```
+
+There is no health command either: the server serves once its port accepts a
+connection. `mini-agents-stack` resets the same way, by a restart of the
+whole stack. `tests/test_reset.py` checks that two starts with the same seed
+file give the same ledger, in every domain and both variants, and restarts a
+real server on loopback.
+
 ## Declaration files
 
 Each domain describes itself the way a declared target is described, in two

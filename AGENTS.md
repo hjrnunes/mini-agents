@@ -73,6 +73,12 @@ slot's `max_chars` (2000 unless set) bounds an `artifact-seed-v1` item's
 content; `runtime-spec.yaml` states it, and `mini-agents-seed-v1` caps every
 item at the same 2000.
 
+**A fresh start is the reset.** The ledger lives in memory and
+`--seed-file` plants only at start, so a restart with the same arguments gives
+the same initial ledger (`tests/test_reset.py`). Keep it that way: no state on
+disk that a start reads back, and no seeding after start without a reset
+command beside it. README "Reset (a fresh start)".
+
 **Declaration files.** `src/mini_agents/declarations/<domain>/{safe,unsafe}/`
 holds `tools-list.json` (the default server's `tools/list` result) and
 `runtime-spec.yaml` (`declared-runtime-v1`: seed slots with `max_chars` and
