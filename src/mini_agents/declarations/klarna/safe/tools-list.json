@@ -178,6 +178,7 @@
             "type": "string"
           },
           "next_due": {
+            "format": "date",
             "title": "Next Due",
             "type": "string"
           }

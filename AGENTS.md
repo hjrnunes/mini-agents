@@ -54,7 +54,9 @@ starts nowhere and fails silently — check both files before declaring done.
 (`write` when it creates or changes a ledger record, otherwise `read`), a
 `VALUE_FACTS` entry for each argument that holds one record kind or a date,
 and regenerated declaration files. `tests/test_tool_access.py` fails on a
-registered tool with no entry, and needs the tool's arguments.
+registered tool with no entry, and needs the tool's arguments. Type a date
+argument `DateArg` in `mcp_server.py`, so its input schema states the format
+its value fact declares (`tests/test_value_facts.py`).
 
 ## Seeded state
 

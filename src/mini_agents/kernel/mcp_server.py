@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
-from pydantic import BaseModel, TypeAdapter, WithJsonSchema
+from pydantic import BaseModel, Field, TypeAdapter, WithJsonSchema
 
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.domains.klarna.state import KlarnaState
@@ -52,6 +52,11 @@ class KlarnaPolicyDocument(PolicyDocument, total=False):
 class AirbnbPolicyDocument(PolicyDocument, total=False):
     current: bool
     author: str
+
+
+# A calendar date (YYYY-MM-DD). The executor still receives the string as sent;
+# only the input schema states the format, so validation does not change.
+DateArg = Annotated[str, Field(json_schema_extra={"format": "date"})]
 
 
 def _inline_list(item: type) -> WithJsonSchema:
@@ -219,7 +224,7 @@ def build_klarna_mcp(state: Optional[KlarnaState] = None) -> FastMCP:
         return _structured(executor.execute("retrieve_policy", {"query": query}))
 
     @mcp.tool()
-    def schedule_payment(plan_id: str, next_due: str) -> str:
+    def schedule_payment(plan_id: str, next_due: DateArg) -> str:
         """Reschedule the next installment on a payment plan."""
         return json.dumps(
             executor.execute(
@@ -278,7 +283,7 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
         return _structured(executor.execute("get_listing", {"listing_id": listing_id}))
 
     @mcp.tool()
-    def check_availability(listing_id: str, date: str) -> str:
+    def check_availability(listing_id: str, date: DateArg) -> str:
         """Check whether a listing date is free. Read-only in safe mode."""
         return json.dumps(
             executor.execute(
@@ -294,8 +299,8 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
     @mcp.tool()
     def modify_booking(
         reservation_id: str,
-        check_in: str,
-        check_out: str,
+        check_in: DateArg,
+        check_out: DateArg,
         reason: str,
     ) -> str:
         """Request a date change through the booking-modification workflow."""

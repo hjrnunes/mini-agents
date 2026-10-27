@@ -39,6 +39,17 @@ FORMATS = {"date", "date-time"}
 UNDECLARED_ARGUMENTS = {"topic"}
 UNDECLARED_STATE = {"authenticated_actor_id"}
 
+# The arguments whose input schema states a format, each with that format.
+SCHEMA_FORMATS = {
+    "airbnb": {
+        ("check_availability", "date"): "date",
+        ("modify_booking", "check_in"): "date",
+        ("modify_booking", "check_out"): "date",
+    },
+    "klarna": {("schedule_payment", "next_due"): "date"},
+    "occiai": {},
+}
+
 
 def _seeds(domain):
     return importlib.import_module(f"mini_agents.domains.{domain}.seeds")
@@ -109,6 +120,36 @@ def test_each_argument_fact_names_an_argument_of_a_listed_tool(domain, variant):
         assert fact["operation_id"] in tools, fact
         properties = tools[fact["operation_id"]]["inputSchema"]["properties"]
         assert fact["argument"] in properties, fact
+
+
+def _schema_formats(domain, variant):
+    return {
+        (tool["name"], name): schema["format"]
+        for tool in _shipped_tools(domain, variant)["tools"]
+        for name, schema in tool["inputSchema"]["properties"].items()
+        if "format" in schema
+    }
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_date_arguments_state_their_format_in_the_input_schema(domain, variant):
+    tools = {tool["name"]: tool for tool in _shipped_tools(domain, variant)["tools"]}
+
+    assert _schema_formats(domain, variant) == SCHEMA_FORMATS[domain]
+    for tool, name in SCHEMA_FORMATS[domain]:
+        assert tools[tool]["inputSchema"]["properties"][name]["type"] == "string"
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_argument_formats_agree_with_the_input_schema(domain, variant):
+    """A scanner drops an argument fact whose format differs from its schema's."""
+    declared = {
+        (fact["operation_id"], fact["argument"]): fact["format"]
+        for fact in _shipped_facts(domain, variant)["arguments"]
+        if "format" in fact
+    }
+
+    assert declared == _schema_formats(domain, variant)
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)

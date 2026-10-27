@@ -106,6 +106,7 @@
             "type": "string"
           },
           "date": {
+            "format": "date",
             "title": "Date",
             "type": "string"
           }
@@ -215,10 +216,12 @@
             "type": "string"
           },
           "check_in": {
+            "format": "date",
             "title": "Check In",
             "type": "string"
           },
           "check_out": {
+            "format": "date",
             "title": "Check Out",
             "type": "string"
           },

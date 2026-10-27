@@ -85,6 +85,21 @@ def _live_call(domain, variant, state, tool, arguments, monkeypatch):
     return asyncio.run(run())
 
 
+@pytest.mark.parametrize("variant", VARIANTS)
+def test_a_date_argument_reaches_the_executor_as_sent(variant, monkeypatch):
+    """The schema states the date format; the server does not enforce it."""
+    state = _seeds("klarna").new_state()
+    arguments = {"plan_id": "PLAN-12", "next_due": "15/09/2026"}
+
+    result = _live_call(
+        "klarna", variant, state, "schedule_payment", arguments, monkeypatch
+    )
+
+    assert not result.isError
+    assert json.loads(result.content[0].text)["status"] == "SCHEDULED"
+    assert state.payment_plans["PLAN-12"].next_due == "15/09/2026"
+
+
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
 def test_the_files_ship_inside_the_package(domain, variant):
     shipped = importlib.resources.files("mini_agents") / "declarations" / domain / variant
