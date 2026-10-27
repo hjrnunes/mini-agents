@@ -3,9 +3,11 @@
 The body copies MiDojo's ``OpenAIResponsesAgentClient._create_response``:
 ``model``, ``input``, ``instructions``, one ``mcp`` tool with
 ``require_approval: never``, ``stream: false``, and ``previous_response_id``
-from the second turn on. One difference: the tool carries no ``headers``. The
-server reads the session token from its own environment, so the token never
-passes through OGX.
+from the second turn on. One difference: the tool carries no ``headers``.
+Behind MiDojo's host interceptor the tool's ``server_url`` is the
+interceptor's and its ``authorization`` the interceptor's token; OGX sends it
+as ``Authorization: Bearer <token>`` (it refuses that header in ``headers``)
+and leaves the field out of the response it stores and returns.
 """
 
 from __future__ import annotations
@@ -34,10 +36,12 @@ def request_body(
     mcp_url: str,
     previous_response_id: str | None,
     allowed_tools: tuple[str, ...] | None = None,
+    authorization: str | None = None,
 ) -> dict[str, Any]:
     # The package's exposed tools, as the Garak path sends them; None exposes
     # every tool the server serves.
     restriction = {"allowed_tools": list(allowed_tools)} if allowed_tools is not None else {}
+    credential = {"authorization": authorization} if authorization is not None else {}
     continuation = (
         {"previous_response_id": previous_response_id}
         if previous_response_id is not None
@@ -54,6 +58,7 @@ def request_body(
                 "server_url": mcp_url,
                 "require_approval": "never",
                 **restriction,
+                **credential,
             }
         ],
         "stream": False,

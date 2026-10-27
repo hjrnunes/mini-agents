@@ -10,6 +10,10 @@ stderr as ``mini-agents-sandbox-agent: <reason>: <detail>``.
 
 The message is always the last argument, taken literally: ``--help``, ``-h``,
 ``--`` or ``-x`` there is a message, not an option.
+
+With ``MIDOJO_TOOL_URL`` and ``MIDOJO_TOOL_TOKEN`` set, the request's MCP tool
+is MiDojo's host interceptor instead of the domain's server; one without the
+other fails the turn (``tool_endpoint``).
 """
 
 from __future__ import annotations
@@ -60,6 +64,11 @@ from mini_agents.sandbox_agent.summary import (
     summary_path,
     write_run_summary,
 )
+from mini_agents.sandbox_agent.tool_endpoint import (
+    ToolEndpoint,
+    read_tool_endpoint,
+    redact,
+)
 
 PROG = "mini-agents-sandbox-agent"
 STATE_DIR = Path("/tmp/agent-state")
@@ -96,6 +105,8 @@ class Inputs:
     model_api_key: str
     instructions: str
     allowed_tools: tuple[str, ...] | None = None
+    # MiDojo's host interceptor, or None to call the domain's server directly.
+    tool_endpoint: ToolEndpoint | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +165,7 @@ def read_inputs(environ: Mapping[str, str]) -> Inputs:
         model_api_key=environ["AGENT_MODEL_API_KEY"],
         instructions=environ[INSTRUCTIONS],
         allowed_tools=_allowed_tools(environ),
+        tool_endpoint=read_tool_endpoint(environ),
     )
 
 
@@ -409,19 +421,25 @@ class Agent:
 
     def _send(self, state: AgentState, inputs: Inputs, message: str, index: int) -> Turn:
         assert state.mcp is not None and state.ogx is not None
+        endpoint = inputs.tool_endpoint
         body = request_body(
             model=inputs.model,
             message=message,
             instructions=inputs.instructions,
-            mcp_url=mcp_url(state.mcp.port),
+            mcp_url=endpoint.url if endpoint is not None else mcp_url(state.mcp.port),
             previous_response_id=state.previous_response_id,
             allowed_tools=inputs.allowed_tools,
+            authorization=endpoint.token if endpoint is not None else None,
         )
-        response = create_response(
-            f"http://{LOOPBACK_HOST}:{state.ogx.port}",
-            body,
-            timeout=self.settings.request_timeout,
-        )
+        try:
+            response = create_response(
+                f"http://{LOOPBACK_HOST}:{state.ogx.port}",
+                body,
+                timeout=self.settings.request_timeout,
+            )
+        except AgentFailure as failure:
+            # OGX's error body may echo the request, the token with it.
+            raise redact(failure, endpoint) from None
         model = response.get("model")
         return Turn(
             index=index,

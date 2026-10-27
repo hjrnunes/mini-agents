@@ -10,5 +10,5 @@ agent command" has the inputs and the files.
 Parts: ``ogx_config`` renders OGX's config, ``state`` keeps the turn state,
 ``responses`` builds the request, ``processes`` starts and checks the servers,
 ``environment`` builds their environments, ``summary`` writes the evidence,
-and ``cli`` runs one turn.
+``tool_endpoint`` reads MiDojo's host interceptor, and ``cli`` runs one turn.
 """

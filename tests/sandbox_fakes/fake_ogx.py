@@ -4,8 +4,9 @@ It reads the port from the rendered config and serves ``POST /v1/responses``
 on loopback. For each request it appends a line to ``$FAKE_OGX_RECORD``: the
 body, its own PID, and which variables its environment holds. With
 ``FAKE_OGX_CALL_TOOL=1`` it calls ``lookup_order`` on the request's MCP server
-over SSE, as OGX would. It answers with response
-ID ``resp-<n>`` and reply ``reply <n>``.
+as OGX would: over SSE, or, when the tool carries ``authorization``, over
+streamable HTTP with ``Authorization: Bearer <authorization>``, listing the
+tools first. It answers with response ID ``resp-<n>`` and reply ``reply <n>``.
 
 ``FAKE_OGX_MODE=silent`` runs without ever listening; ``exit`` exits at once.
 """
@@ -20,7 +21,15 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
 
-WATCHED = ("MIDOJO_SESSION_TOKEN", "MIDOJO_URL", "OPENAI_API_KEY", "PATH", "TIKTOKEN_CACHE_DIR")
+WATCHED = (
+    "MIDOJO_SESSION_TOKEN",
+    "MIDOJO_URL",
+    "MIDOJO_TOOL_TOKEN",
+    "MIDOJO_TOOL_URL",
+    "OPENAI_API_KEY",
+    "PATH",
+    "TIKTOKEN_CACHE_DIR",
+)
 
 
 async def _call_tool(url: str) -> str:
@@ -30,6 +39,20 @@ async def _call_tool(url: str) -> str:
     async with sse_client(url) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
+            result = await session.call_tool("lookup_order", {"order_id": "ORD-101"})
+            return result.content[0].text
+
+
+async def _call_tool_with_token(url: str, token: str) -> str:
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    headers = {"Authorization": f"Bearer {token}"}
+    async with streamablehttp_client(url, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            listed = await session.list_tools()
+            assert "lookup_order" in [tool.name for tool in listed.tools]
             result = await session.call_tool("lookup_order", {"order_id": "ORD-101"})
             return result.content[0].text
 
@@ -58,7 +81,12 @@ def main() -> None:
                 n = count[0]
             tool_result = None
             if os.environ.get("FAKE_OGX_CALL_TOOL") == "1":
-                tool_result = asyncio.run(_call_tool(body["tools"][0]["server_url"]))
+                tool = body["tools"][0]
+                if "authorization" in tool:
+                    call = _call_tool_with_token(tool["server_url"], tool["authorization"])
+                else:
+                    call = _call_tool(tool["server_url"])
+                tool_result = asyncio.run(call)
             if record:
                 line = {
                     "path": self.path,

@@ -3,7 +3,9 @@
 Exec ignores the image's ``ENV``, so the command sets ``PATH`` and
 ``TIKTOKEN_CACHE_DIR`` for its children itself. A runtime may still hand the
 command MiDojo's ``MIDOJO_URL`` and ``MIDOJO_SESSION_TOKEN``; neither server
-needs them, so neither gets them. OGX gets the model key as
+needs them, so neither gets them. Nor does either get the interceptor's
+``MIDOJO_TOOL_URL`` and ``MIDOJO_TOOL_TOKEN``: the command reads them and
+sends them to OGX in each request. OGX gets the model key as
 ``OPENAI_API_KEY``, which its config references.
 """
 
@@ -13,7 +15,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 SYSTEM_PATH = ("/usr/local/bin", "/usr/bin", "/bin")
-SCRUBBED = ("MIDOJO_SESSION_TOKEN", "MIDOJO_URL")
+SCRUBBED = ("MIDOJO_SESSION_TOKEN", "MIDOJO_URL", "MIDOJO_TOOL_TOKEN", "MIDOJO_TOOL_URL")
 
 
 def child_path(venv_bin: Path) -> str:

@@ -263,7 +263,8 @@ The command never restarts a server.
 - `instructions`;
 - `stream: false`;
 - one `mcp` tool (`server_label: midojo`, the server's loopback URL,
-  `require_approval: never`, no `headers`);
+  `require_approval: never`, no `headers`), or, behind MiDojo's host
+  interceptor, its URL and token instead (below);
 - from the second turn on, the previous turn's response ID as
   `previous_response_id`.
 
@@ -278,9 +279,10 @@ header.
 | `AGENT_MODEL_API_KEY` | the relay's placeholder key, passed to OGX as `OPENAI_API_KEY` |
 | `AGENT_INSTRUCTIONS` | the system message, sent as `instructions`; must be set, may be empty |
 | `AGENT_ALLOWED_TOOLS` | optional: the comma-separated tools the model may call, sent as the MCP tool's `allowed_tools` as the Garak path does; unset exposes every tool the server serves |
+| `MIDOJO_TOOL_URL`, `MIDOJO_TOOL_TOKEN` | optional, together: MiDojo's host interceptor and its bearer token (below) |
 
-Every input is required, apart from the two turn variables. A missing one
-fails with `input-missing`.
+Every input is required, apart from the turn and the optional variables. A
+missing one fails with `input-missing`.
 
 The command sets the children's environment itself, because exec does not
 apply the image's `ENV`:
@@ -290,6 +292,35 @@ apply the image's `ENV`:
 Neither server needs MiDojo's `MIDOJO_URL` or `MIDOJO_SESSION_TOKEN`; when
 the runtime still sets them, the command passes them to neither. Both servers
 run with `/tmp/agent-state` as their working directory.
+
+**Behind MiDojo's host interceptor.** In host interception mode MiDojo's
+openshell runtime sets `MIDOJO_TOOL_URL`, the interceptor's streamable HTTP
+MCP URL as the sandbox reaches it (`http://host.openshell.internal:<port>/mcp`),
+and `MIDOJO_TOOL_TOKEN`, the token it accepts as `Authorization: Bearer
+<token>` (it answers 401 without it). With both set, every turn's `mcp` tool
+has the interceptor's URL as `server_url` and the token as `authorization`, so
+OGX lists and calls the tools there, with that header; OGX refuses an
+`Authorization` in `headers` and leaves `authorization` out of the responses
+it stores and returns. The domain's server in the sandbox still starts but is
+never called. With neither set, the tool points at that server, as above.
+
+| `MIDOJO_TOOL_URL` | `MIDOJO_TOOL_TOKEN` | Turn |
+|---|---|---|
+| set | set | tools at the interceptor, with the token |
+| unset or empty | unset or empty | tools at the domain's server in the sandbox |
+| set | unset or empty | fails with `input-missing`, naming both variables, before anything starts |
+| unset or empty | set | the same |
+
+A blank value counts as unset. A URL that is not `http(s)` fails with
+`input-invalid`. One variable without the other never falls back to the
+server in the sandbox. The command writes the token to no output, state file,
+evidence or failure detail: neither variable reaches either server's
+environment (the token goes to OGX in the request only), and a failure detail
+that echoes it shows `<MIDOJO_TOOL_TOKEN>` instead.
+
+`sandbox-policy.json` does not yet name the interceptor: behind it, OGX's
+`python-ogx` makes the tool calls, so a policy for that mode must let it reach
+the interceptor's port.
 
 **State** stays in `/tmp/agent-state`, never in the workdir, because MiDojo
 observes every new workdir file. **Evidence** goes to `/sandbox/workdir/.asago/`:
@@ -338,7 +369,7 @@ its original reason.
 
 | Reason | When |
 |---|---|
-| `input-missing`, `input-invalid` | an input variable is unset, or a turn variable or URL is malformed |
+| `input-missing`, `input-invalid` | an input variable is unset (or one interceptor variable without the other), or a turn variable or URL is malformed |
 | `state-missing`, `turn-out-of-order` | a later turn finds no readable state, or a turn does not follow the recorded ones; recorded under `rejected` |
 | `state-write-failed`, `evidence-write-failed` | the state, the summary or the OGX log copy cannot be written |
 | `process-start-failed` | an interpreter cannot be executed, or a started process's identity cannot be read |

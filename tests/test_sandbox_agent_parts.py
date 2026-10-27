@@ -455,6 +455,8 @@ def test_liveness_falls_back_to_kill_without_proc(tmp_path):
 ENVIRON = {
     "MIDOJO_URL": "http://host.openshell.internal:18007",
     "MIDOJO_SESSION_TOKEN": "tok",
+    "MIDOJO_TOOL_URL": "http://host.openshell.internal:18008/mcp",
+    "MIDOJO_TOOL_TOKEN": "tool-tok",
     "MIDOJO_TURN_INDEX": "0",
     "AGENT_MODEL": "m",
     "HOME": "/sandbox",
@@ -469,7 +471,12 @@ def test_ogx_gets_neither_midojo_url_nor_token():
         tiktoken_dir=Path("/opt/app-root/tiktoken"),
         api_key="placeholder",
     )
-    assert SCRUBBED == ("MIDOJO_SESSION_TOKEN", "MIDOJO_URL")
+    assert SCRUBBED == (
+        "MIDOJO_SESSION_TOKEN",
+        "MIDOJO_URL",
+        "MIDOJO_TOOL_TOKEN",
+        "MIDOJO_TOOL_URL",
+    )
     assert not set(SCRUBBED) & set(env)
     assert env["OPENAI_API_KEY"] == "placeholder"
     assert env["PATH"] == "/opt/app-root/.venv/bin:/usr/local/bin:/usr/bin:/bin"

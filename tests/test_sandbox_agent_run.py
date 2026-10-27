@@ -5,8 +5,9 @@ fake Responses server stands in for it (``sandbox_fakes/fake_ogx.py``),
 started through a fake ``python-ogx``. In the two-turn test the MCP server is
 the real ``mini_agents`` server, started through a ``python-mcp`` that runs
 this venv's interpreter. The failure tests use a fake MCP server
-(``fake_mcp.py``) that only listens. No model calls, no network beyond
-loopback.
+(``fake_mcp.py``) that only listens. The interceptor test serves a fake of
+MiDojo's host interceptor in this process: streamable HTTP at ``/mcp``, 401
+without its bearer token. No model calls, no network beyond loopback.
 """
 
 from __future__ import annotations
@@ -14,12 +15,17 @@ from __future__ import annotations
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
+import httpx
 import pytest
+import uvicorn
+from mcp.server.fastmcp import FastMCP
 
 FAKES = Path(__file__).parent / "sandbox_fakes"
 SCRIPT = Path(sys.executable).parent / "mini-agents-sandbox-agent"
@@ -302,3 +308,140 @@ def test_a_server_that_never_listens_fails_the_first_turn(sandbox, extra, reason
     for name in ("mcp", "ogx"):
         _wait_gone(state[name]["pid"])
     assert _summary(sandbox)["exit_reasons"] == [reason]
+
+
+INTERCEPTOR_TOKEN = "interceptor-token-7c1e"
+
+
+class FakeInterceptor:
+    """MiDojo's host interceptor in miniature: one ``lookup_order`` tool over
+    streamable HTTP at ``/mcp``, 404 elsewhere, 401 without
+    ``Authorization: Bearer <token>`` (``midojo.interception_host``). It keeps
+    each request's path, ``Authorization`` header and JSON-RPC method."""
+
+    def __init__(self, token):
+        self.token = token
+        self.requests = []
+        mcp = FastMCP("fake-interceptor")
+
+        @mcp.tool()
+        def lookup_order(order_id: str) -> str:
+            return f"intercepted {order_id}"
+
+        self._mcp_app = mcp.streamable_http_app()
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            self.port = probe.getsockname()[1]
+        self.url = f"http://127.0.0.1:{self.port}/mcp"
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self._mcp_app(scope, receive, send)
+            return
+        headers = dict(scope["headers"])
+        seen = {
+            "path": scope["path"],
+            "authorization": headers.get(b"authorization", b"").decode(),
+            "method": None,
+        }
+        self.requests.append(seen)
+        chunks = []
+
+        async def keep():
+            message = await receive()
+            if message["type"] == "http.request":
+                chunks.append(message.get("body", b""))
+                try:
+                    seen["method"] = json.loads(b"".join(chunks)).get("method")
+                except ValueError:
+                    pass
+            return message
+
+        if scope["path"].rstrip("/") != "/mcp":
+            status, body = 404, b"Not found"
+        elif seen["authorization"] != f"Bearer {self.token}":
+            status, body = 401, b"This interceptor's bearer token is required"
+        else:
+            await self._mcp_app(scope, keep, send)
+            return
+        await send({"type": "http.response.start", "status": status, "headers": []})
+        await send({"type": "http.response.body", "body": body})
+
+
+@pytest.fixture
+def interceptor():
+    fake = FakeInterceptor(INTERCEPTOR_TOKEN)
+    server = uvicorn.Server(
+        uvicorn.Config(fake, host="127.0.0.1", port=fake.port, log_level="warning", lifespan="on")
+    )
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        assert thread.is_alive() and time.monotonic() < deadline, "fake interceptor did not start"
+        time.sleep(0.02)
+    yield fake
+    server.should_exit = True
+    thread.join(timeout=10)
+
+
+def _files_text(*roots):
+    return "".join(
+        path.read_text(errors="replace")
+        for root in roots
+        if root.exists()
+        for path in root.rglob("*")
+        if path.is_file()
+    )
+
+
+def test_behind_the_interceptor_the_tools_are_called_there_with_its_token(sandbox, interceptor):
+    """OGX lists and calls the tools at ``MIDOJO_TOOL_URL`` with the bearer
+    token; the domain's server in the sandbox receives no request, and the
+    token is nowhere in the output, the state or the evidence."""
+
+    assert httpx.post(interceptor.url, json={}).status_code == 401
+    interceptor.requests.clear()
+    direct = sandbox["state"].parent / "direct-mcp-requests.jsonl"
+    env = _environment(
+        sandbox["record"],
+        index=0,
+        count=1,
+        FAKE_OGX_CALL_TOOL="1",
+        FAKE_MCP_RECORD=str(direct),
+        MIDOJO_TOOL_URL=interceptor.url,
+        MIDOJO_TOOL_TOKEN=INTERCEPTOR_TOKEN,
+    )
+
+    result = _turn(sandbox, "Where is my order?", env)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "reply 1\n"
+    (request,) = _lines(sandbox["record"])
+    assert request["body"]["tools"] == [
+        {
+            "type": "mcp",
+            "server_label": "midojo",
+            "server_url": interceptor.url,
+            "require_approval": "never",
+            "authorization": INTERCEPTOR_TOKEN,
+        }
+    ]
+    assert request["tool_result"] == "intercepted ORD-101"
+    # OGX gets the token in the request only, neither variable in its environment.
+    assert request["env"]["MIDOJO_TOOL_URL"] is None
+    assert request["env"]["MIDOJO_TOOL_TOKEN"] is None
+
+    methods = [seen["method"] for seen in interceptor.requests]
+    assert "tools/list" in methods and "tools/call" in methods
+    assert {seen["path"] for seen in interceptor.requests} == {"/mcp"}
+    assert {seen["authorization"] for seen in interceptor.requests} == {
+        f"Bearer {INTERCEPTOR_TOKEN}"
+    }
+
+    # The domain's server in the sandbox listened but was never called.
+    assert _state(sandbox)["mcp"]["port"] not in (None, interceptor.port)
+    assert not direct.exists() or direct.read_text() == ""
+
+    assert INTERCEPTOR_TOKEN not in result.stdout + result.stderr
+    assert INTERCEPTOR_TOKEN not in _files_text(sandbox["state"], sandbox["workdir"])
