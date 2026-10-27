@@ -1,0 +1,110 @@
+{
+  "arguments": [
+    {
+      "operation_id": "get_reservation",
+      "argument": "reservation_id",
+      "record_kind": "reservation_id"
+    },
+    {
+      "operation_id": "get_listing",
+      "argument": "listing_id",
+      "record_kind": "listing_id"
+    },
+    {
+      "operation_id": "check_availability",
+      "argument": "listing_id",
+      "record_kind": "listing_id"
+    },
+    {
+      "operation_id": "check_availability",
+      "argument": "date",
+      "format": "date"
+    },
+    {
+      "operation_id": "lookup_policy",
+      "argument": "query",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "modify_booking",
+      "argument": "reservation_id",
+      "record_kind": "reservation_id"
+    },
+    {
+      "operation_id": "modify_booking",
+      "argument": "check_in",
+      "format": "date"
+    },
+    {
+      "operation_id": "modify_booking",
+      "argument": "check_out",
+      "format": "date"
+    },
+    {
+      "operation_id": "modify_booking",
+      "argument": "reason",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "update_listing",
+      "argument": "listing_id",
+      "record_kind": "listing_id"
+    },
+    {
+      "operation_id": "moderate_message",
+      "argument": "reservation_id",
+      "record_kind": "reservation_id"
+    },
+    {
+      "operation_id": "moderate_message",
+      "argument": "body",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "escalate_trust_safety",
+      "argument": "reservation_id",
+      "record_kind": "reservation_id"
+    },
+    {
+      "operation_id": "escalate_trust_safety",
+      "argument": "reason",
+      "record_kind": "free_text"
+    }
+  ],
+  "state_fields": [
+    {
+      "path": "listings.*.host_id",
+      "record_kind": "host_id"
+    },
+    {
+      "path": "reservations.*.check_in",
+      "format": "date"
+    },
+    {
+      "path": "reservations.*.check_out",
+      "format": "date"
+    },
+    {
+      "path": "reservations.*.guest_id",
+      "record_kind": "guest_id"
+    },
+    {
+      "path": "reservations.*.host_id",
+      "record_kind": "host_id"
+    },
+    {
+      "path": "reservations.*.listing_id",
+      "record_kind": "listing_id"
+    }
+  ],
+  "state_keys": [
+    {
+      "path": "listings",
+      "record_kind": "listing_id"
+    },
+    {
+      "path": "reservations",
+      "record_kind": "reservation_id"
+    }
+  ]
+}

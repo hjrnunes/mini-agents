@@ -1,4 +1,4 @@
-"""Each domain ships tools-list.json and runtime-spec.yaml per variant.
+"""Each domain ships tools-list.json, runtime-spec.yaml and value-facts.json per variant.
 
 ``tools-list.json`` must be the ``tools/list`` result a client of the default
 server receives, so the test starts each server in-process and lists its tools
@@ -6,6 +6,7 @@ over an in-memory MCP session. ``runtime-spec.yaml`` must hold what a
 consumer's declared-target reader accepts (``declared-runtime-v1``) and agree
 with the seed hook: the records it names are the ones that variant accepts,
 and each slot's ``max_chars`` is the limit ``--seed-file`` enforces.
+``tests/test_value_facts.py`` checks ``value-facts.json``.
 """
 
 from __future__ import annotations
@@ -90,6 +91,7 @@ def test_the_files_ship_inside_the_package(domain, variant):
 
     assert (shipped / "tools-list.json").is_file()
     assert (shipped / "runtime-spec.yaml").is_file()
+    assert (shipped / "value-facts.json").is_file()
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
@@ -116,7 +118,7 @@ def test_the_tools_list_leaves_out_the_state_summary(domain, variant):
 def test_the_committed_files_are_what_the_generator_writes():
     files = declarations.rendered()
 
-    assert len(files) == len(CASES) * 2
+    assert len(files) == len(CASES) * 3
     stale = [str(path) for path, text in files.items() if path.read_text() != text]
     assert stale == [], "run scripts/gen_declarations.py"
 

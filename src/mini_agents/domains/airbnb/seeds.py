@@ -1,4 +1,4 @@
-"""Seed slots and tool access for MiniAirbnb.
+"""Seed slots, tool access and value facts for MiniAirbnb.
 
 No host-written policy or guest message slot exists. ``lookup_policy`` hides
 every document not authored by Airbnb, and no read tool returns a message, so
@@ -12,6 +12,7 @@ from typing import Optional, Sequence
 
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.kernel.seeds import SeedItem, Slot, apply_items
+from mini_agents.kernel.value_facts import ValueFacts, argument_fact, state_fact
 
 SLOTS = (
     Slot(
@@ -56,6 +57,40 @@ TOOL_ACCESS = {
     "modify_booking": "write",
     "update_listing": "write",
 }
+
+
+# What each argument and ledger value holds. ``topic`` and
+# ``authenticated_actor_id`` (a guest or a host) are left undeclared.
+VALUE_FACTS = ValueFacts(
+    arguments=(
+        argument_fact("get_reservation", "reservation_id", record_kind="reservation_id"),
+        argument_fact("get_listing", "listing_id", record_kind="listing_id"),
+        argument_fact("check_availability", "listing_id", record_kind="listing_id"),
+        argument_fact("check_availability", "date", format="date"),
+        argument_fact("lookup_policy", "query", record_kind="free_text"),
+        argument_fact("modify_booking", "reservation_id", record_kind="reservation_id"),
+        argument_fact("modify_booking", "check_in", format="date"),
+        argument_fact("modify_booking", "check_out", format="date"),
+        argument_fact("modify_booking", "reason", record_kind="free_text"),
+        argument_fact("update_listing", "listing_id", record_kind="listing_id"),
+        argument_fact("moderate_message", "reservation_id", record_kind="reservation_id"),
+        argument_fact("moderate_message", "body", record_kind="free_text"),
+        argument_fact("escalate_trust_safety", "reservation_id", record_kind="reservation_id"),
+        argument_fact("escalate_trust_safety", "reason", record_kind="free_text"),
+    ),
+    state_fields=(
+        state_fact("listings.*.host_id", record_kind="host_id"),
+        state_fact("reservations.*.check_in", format="date"),
+        state_fact("reservations.*.check_out", format="date"),
+        state_fact("reservations.*.guest_id", record_kind="guest_id"),
+        state_fact("reservations.*.host_id", record_kind="host_id"),
+        state_fact("reservations.*.listing_id", record_kind="listing_id"),
+    ),
+    state_keys=(
+        state_fact("listings", record_kind="listing_id"),
+        state_fact("reservations", record_kind="reservation_id"),
+    ),
+)
 
 
 def new_state() -> AirbnbState:

@@ -51,8 +51,9 @@ Touch, in order: `domains/<name>/` (`state.py`, `tools.py`, `tools_unsafe.py`,
 starts nowhere and fails silently — check both files before declaring done.
 
 **Adding a tool** also needs an entry in the domain's `seeds.py` `TOOL_ACCESS`
-(`write` when it creates or changes a ledger record, otherwise `read`) and
-regenerated declaration files. `tests/test_tool_access.py` fails on a
+(`write` when it creates or changes a ledger record, otherwise `read`), a
+`VALUE_FACTS` entry for each argument that holds one record kind or a date,
+and regenerated declaration files. `tests/test_tool_access.py` fails on a
 registered tool with no entry, and needs the tool's arguments.
 
 ## Seeded state
@@ -83,9 +84,13 @@ command beside it. README "Reset (a fresh start)".
 holds `tools-list.json` (the default server's `tools/list` result) and
 `runtime-spec.yaml` (`declared-runtime-v1`: seed slots with `max_chars` and
 each variant's records, and every listed tool's operation class from
-`TOOL_ACCESS`). Regenerate them with `uv run python scripts/gen_declarations.py`
-after a tool, its description or arguments, a slot or a `TOOL_ACCESS` entry
-changes; `tests/test_declarations.py` checks them against the live servers.
+`TOOL_ACCESS`) and `value-facts.json` (the record kind or date format of tool
+arguments and ledger values, from the domain's `seeds.py` `VALUE_FACTS`).
+Regenerate them with `uv run python scripts/gen_declarations.py` after a tool,
+its description or arguments, a slot, a `TOOL_ACCESS` entry or a value fact
+changes; `tests/test_declarations.py` checks them against the live servers,
+and `tests/test_value_facts.py` that every fact names a listed argument or a
+ledger path. Leave a value undeclared when it holds no single record kind.
 
 ## Testing
 

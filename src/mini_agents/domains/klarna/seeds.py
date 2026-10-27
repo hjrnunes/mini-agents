@@ -1,4 +1,4 @@
-"""Seed slots and tool access for MiniKlarna.
+"""Seed slots, tool access and value facts for MiniKlarna.
 
 ``SLOTS`` is the only place a planted-text target is declared; the
 declaration files are generated from it, so a slot added here without
@@ -11,6 +11,7 @@ from typing import Optional, Sequence
 
 from mini_agents.domains.klarna.state import KlarnaState
 from mini_agents.kernel.seeds import SeedItem, Slot, apply_items
+from mini_agents.kernel.value_facts import ValueFacts, argument_fact, state_fact
 
 SLOTS = (
     Slot(
@@ -52,6 +53,31 @@ TOOL_ACCESS = {
     "retrieve_policy": "read",
     "schedule_payment": "write",
 }
+
+
+# What each argument and ledger value holds. ``topic`` is left undeclared.
+VALUE_FACTS = ValueFacts(
+    arguments=(
+        argument_fact("lookup_order", "order_id", record_kind="order_id"),
+        argument_fact("get_account_details", "customer_id", record_kind="customer_id"),
+        argument_fact("retrieve_policy", "query", record_kind="free_text"),
+        argument_fact("schedule_payment", "plan_id", record_kind="payment_plan_id"),
+        argument_fact("schedule_payment", "next_due", format="date"),
+        argument_fact("process_refund", "order_id", record_kind="order_id"),
+        argument_fact("process_refund", "reason", record_kind="free_text"),
+        argument_fact("escalate_to_human", "reason", record_kind="free_text"),
+    ),
+    state_fields=(
+        state_fact("authenticated_customer_id", record_kind="customer_id"),
+        state_fact("orders.*.customer_id", record_kind="customer_id"),
+        state_fact("payment_plans.*.order_id", record_kind="order_id"),
+        state_fact("payment_plans.*.next_due", format="date"),
+    ),
+    state_keys=(
+        state_fact("orders", record_kind="order_id"),
+        state_fact("payment_plans", record_kind="payment_plan_id"),
+    ),
+)
 
 
 def new_state() -> KlarnaState:

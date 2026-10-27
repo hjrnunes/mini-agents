@@ -6,7 +6,10 @@ A consumer describes a target by two files, as it describes a declared one:
 The spec names each seed slot, with its carrier tool, record key, field,
 controller, content kind, ``max_chars`` and records, and classifies every
 listed tool as ``read_only`` or ``mutating`` from the domain's
-``TOOL_ACCESS``, since no tool carries MCP annotations.
+``TOOL_ACCESS``, since no tool carries MCP annotations. Beside them,
+``value-facts.json`` holds the domain's ``VALUE_FACTS``
+(:mod:`mini_agents.kernel.value_facts`), the record kind or date format of
+tool arguments and ledger values, which a scanner reads with ``--value-facts``.
 
 Each domain has two variants, each a target of its own:
 ``declarations/<domain>/safe/`` and ``declarations/<domain>/unsafe/``
@@ -16,8 +19,8 @@ hidden from ``tools/list``, is in neither.
 
 The spec is written as JSON, which YAML reads unchanged, under a comment. Run
 ``scripts/gen_declarations.py`` after a tool, its description or arguments, a
-seed slot or a ``TOOL_ACCESS`` entry changes. ``tests/test_declarations.py``
-fails while a committed file differs.
+seed slot, a ``TOOL_ACCESS`` entry or a value fact changes.
+``tests/test_declarations.py`` fails while a committed file differs.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ DECLARATIONS_DIR = Path(__file__).resolve().parent.parent / "declarations"
 VARIANTS = ("safe", "unsafe")
 TOOLS_LIST_FILE = "tools-list.json"
 RUNTIME_SPEC_FILE = "runtime-spec.yaml"
+VALUE_FACTS_FILE = "value-facts.json"
 RUNTIME_SPEC_VERSION = "declared-runtime-v1"
 OPERATION_CLASSES = {"read": "read_only", "write": "mutating"}
 
@@ -107,6 +111,16 @@ def render_runtime_spec(domain: str, variant: str) -> str:
     return header + json.dumps(runtime_spec(domain, variant), indent=2) + "\n"
 
 
+def value_facts(domain: str) -> dict[str, Any]:
+    """The domain's value facts; both variants share one tool schema and state."""
+    seeds = importlib.import_module(f"mini_agents.domains.{domain}.seeds")
+    return seeds.VALUE_FACTS.to_json()
+
+
+def render_value_facts(domain: str) -> str:
+    return json.dumps(value_facts(domain), indent=2) + "\n"
+
+
 def read_runtime_spec(path: Path) -> dict[str, Any]:
     """Read a spec this module wrote: JSON under ``#`` comment lines."""
     lines = path.read_text().splitlines()
@@ -121,4 +135,5 @@ def rendered() -> dict[Path, str]:
             directory = declaration_dir(domain, variant)
             files[directory / TOOLS_LIST_FILE] = render_tools_list(domain, variant)
             files[directory / RUNTIME_SPEC_FILE] = render_runtime_spec(domain, variant)
+            files[directory / VALUE_FACTS_FILE] = render_value_facts(domain)
     return files

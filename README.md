@@ -503,7 +503,7 @@ real server on loopback.
 
 ## Declaration files
 
-Each domain describes itself the way a declared target is described, in two
+Each domain describes itself the way a declared target is described, in three
 files per variant, shipped with the package under
 `src/mini_agents/declarations/<domain>/safe/` and
 `src/mini_agents/declarations/<domain>/unsafe/` (the `--unsafe` server, a
@@ -519,10 +519,19 @@ target of its own):
   `operations` classifies every listed tool as `read_only` or `mutating` from
   `TOOL_ACCESS`, since no tool carries MCP annotations. The spec is JSON under
   a comment header; YAML reads it unchanged.
+- `value-facts.json`: the record kind (`order_id`, `patient_id`, `free_text`,
+  ...) or date format of tool arguments (`arguments`), ledger values
+  (`state_fields`) and ledger mapping keys (`state_keys`), the document the
+  scenario generator's target scanner reads with `--value-facts`. A state path
+  is dotted and relative to the state summary's ledger; `*` stands for any
+  key. Each domain declares them as `VALUE_FACTS` in `domains/<name>/seeds.py`,
+  and both variants carry the same facts. Values that hold no single kind
+  stay undeclared, such as a free-text `topic` or `authenticated_actor_id`
+  (a guest or a host).
 
 Never edit them by hand. Regenerate them after you add, remove or rename a
-tool, change its description or arguments, or change a slot or a
-`TOOL_ACCESS` entry:
+tool, change its description or arguments, or change a slot, a
+`TOOL_ACCESS` entry or a `VALUE_FACTS` entry:
 
 ```bash
 uv run python scripts/gen_declarations.py          # write
@@ -531,5 +540,7 @@ uv run python scripts/gen_declarations.py --check  # fail if stale
 
 `tests/test_declarations.py` starts each variant's server in-process, lists its
 tools over an in-memory MCP session and fails while `tools-list.json` differs,
-while either file differs from the generated one, or while a slot's
-`max_chars` is not the limit the seed hook enforces.
+while any file differs from the generated one, or while a slot's
+`max_chars` is not the limit the seed hook enforces. `tests/test_value_facts.py`
+fails while a value fact names a tool argument the variant does not list or a
+ledger path its state does not have.

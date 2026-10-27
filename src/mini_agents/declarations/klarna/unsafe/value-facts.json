@@ -1,0 +1,72 @@
+{
+  "arguments": [
+    {
+      "operation_id": "lookup_order",
+      "argument": "order_id",
+      "record_kind": "order_id"
+    },
+    {
+      "operation_id": "get_account_details",
+      "argument": "customer_id",
+      "record_kind": "customer_id"
+    },
+    {
+      "operation_id": "retrieve_policy",
+      "argument": "query",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "schedule_payment",
+      "argument": "plan_id",
+      "record_kind": "payment_plan_id"
+    },
+    {
+      "operation_id": "schedule_payment",
+      "argument": "next_due",
+      "format": "date"
+    },
+    {
+      "operation_id": "process_refund",
+      "argument": "order_id",
+      "record_kind": "order_id"
+    },
+    {
+      "operation_id": "process_refund",
+      "argument": "reason",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "escalate_to_human",
+      "argument": "reason",
+      "record_kind": "free_text"
+    }
+  ],
+  "state_fields": [
+    {
+      "path": "authenticated_customer_id",
+      "record_kind": "customer_id"
+    },
+    {
+      "path": "orders.*.customer_id",
+      "record_kind": "customer_id"
+    },
+    {
+      "path": "payment_plans.*.order_id",
+      "record_kind": "order_id"
+    },
+    {
+      "path": "payment_plans.*.next_due",
+      "format": "date"
+    }
+  ],
+  "state_keys": [
+    {
+      "path": "orders",
+      "record_kind": "order_id"
+    },
+    {
+      "path": "payment_plans",
+      "record_kind": "payment_plan_id"
+    }
+  ]
+}

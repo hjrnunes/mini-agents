@@ -1,0 +1,113 @@
+{
+  "arguments": [
+    {
+      "operation_id": "get_patient_profile",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "get_referral",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "get_education",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "ask_clinical_question",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "ask_clinical_question",
+      "argument": "question",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "submit_questionnaire",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "summarize_for_ehr",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "summarize_for_ehr",
+      "argument": "text",
+      "record_kind": "free_text"
+    },
+    {
+      "operation_id": "commit_to_ehr",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "commit_to_ehr",
+      "argument": "draft_id",
+      "record_kind": "ehr_draft_id"
+    },
+    {
+      "operation_id": "generate_education_video",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "escalate_to_clinician",
+      "argument": "patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "operation_id": "escalate_to_clinician",
+      "argument": "reason",
+      "record_kind": "free_text"
+    }
+  ],
+  "state_fields": [
+    {
+      "path": "authenticated_patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "path": "patients.*.patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "path": "referrals.*.patient_id",
+      "record_kind": "patient_id"
+    },
+    {
+      "path": "referrals.*.referral_id",
+      "record_kind": "referral_id"
+    },
+    {
+      "path": "referrals.*.education_template_id",
+      "record_kind": "education_template_id"
+    },
+    {
+      "path": "education.*.template_id",
+      "record_kind": "education_template_id"
+    }
+  ],
+  "state_keys": [
+    {
+      "path": "patients",
+      "record_kind": "patient_id"
+    },
+    {
+      "path": "referrals",
+      "record_kind": "referral_id"
+    },
+    {
+      "path": "education",
+      "record_kind": "education_template_id"
+    },
+    {
+      "path": "ehr_records",
+      "record_kind": "patient_id"
+    }
+  ]
+}
