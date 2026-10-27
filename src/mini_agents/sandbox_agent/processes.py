@@ -36,10 +36,8 @@ Liveness = Callable[[int], bool]
 Identity = Callable[[int], str | None]
 
 
-def mcp_command(
-    python: Path, *, domain: str, port: int, midojo_url: str, midojo_log: Path
-) -> list[str]:
-    """The domain's safe server in MiDojo mode, on loopback."""
+def mcp_command(python: Path, *, domain: str, port: int) -> list[str]:
+    """The domain's safe server, on loopback."""
 
     return [
         str(python),
@@ -51,10 +49,6 @@ def mcp_command(
         LOOPBACK_HOST,
         "--port",
         str(port),
-        "--midojo-url",
-        midojo_url,
-        "--midojo-log",
-        str(midojo_log),
     ]
 
 

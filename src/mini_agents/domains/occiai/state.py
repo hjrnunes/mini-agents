@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any
 
 from mini_agents.kernel.state import (
     AuditLogEntry,
     ledger_to_environment,
     new_session_id,
-    rebuild_records,
     utc_now,
 )
 
@@ -169,7 +167,7 @@ class OcciAIState:
         self.session_id = new_session_id()
         self.authenticated_patient_id = authenticated_patient_id
 
-    # Every attribute, in order; the MiDojo environment carries exactly these.
+    # Every attribute, in order; to_environment carries exactly these.
     ENVIRONMENT_ATTRIBUTES = (
         "patients",
         "referrals",
@@ -184,37 +182,10 @@ class OcciAIState:
         "session_id",
         "authenticated_patient_id",
     )
-    RECORD_CONTAINERS = (
-        ("patients", "dict", Patient),
-        ("referrals", "dict", Referral),
-        ("education", "dict", EducationMaterial),
-        ("questionnaires", "list", Questionnaire),
-        ("ehr_drafts", "list", EhrDraft),
-        ("ehr_records", "dict_of_lists", EhrRecord),
-        ("commits", "list", CommitAttempt),
-        ("escalations", "list", Escalation),
-        ("audit_logs", "list", AuditLogEntry),
-    )
 
     def to_environment(self) -> dict[str, Any]:
         """The whole ledger as JSON-native values (records as plain dicts)."""
         return ledger_to_environment(self, self.ENVIRONMENT_ATTRIBUTES)
-
-    @classmethod
-    def from_environment(cls, environment: Mapping[str, Any]) -> Self:
-        """Rebuild a ledger from ``to_environment`` output, without reseeding."""
-        state = cls.__new__(cls)
-        for name, kind, record_class in cls.RECORD_CONTAINERS:
-            setattr(state, name, rebuild_records(kind, record_class, environment[name]))
-        for name in cls.ENVIRONMENT_ATTRIBUTES:
-            if not hasattr(state, name):
-                value = environment[name]
-                setattr(
-                    state,
-                    name,
-                    [dict(v) for v in value] if isinstance(value, list) else value,
-                )
-        return state
 
     def log_audit(
         self,

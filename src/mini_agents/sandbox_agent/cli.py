@@ -54,7 +54,6 @@ from mini_agents.sandbox_agent.state import (
     state_path,
 )
 from mini_agents.sandbox_agent.summary import (
-    MCP_CALLS,
     copy_ogx_log,
     evidence_dir,
     record_rejection,
@@ -74,8 +73,6 @@ REQUEST_TIMEOUT = 600.0
 TURN_INDEX = "MIDOJO_TURN_INDEX"
 TURN_COUNT = "MIDOJO_TURN_COUNT"
 REQUIRED = (
-    "MIDOJO_URL",
-    "MIDOJO_SESSION_TOKEN",
     "AGENT_MODEL",
     "AGENT_MODEL_BASE_URL",
     "AGENT_MODEL_API_KEY",
@@ -94,7 +91,6 @@ HELP_FLAGS = ("-h", "--help")
 
 @dataclass(frozen=True)
 class Inputs:
-    midojo_url: str
     model: str
     model_base_url: str
     model_api_key: str
@@ -153,7 +149,6 @@ def read_inputs(environ: Mapping[str, str]) -> Inputs:
     if missing:
         raise AgentFailure(failures.INPUT_MISSING, "not set: " + ", ".join(missing))
     return Inputs(
-        midojo_url=environ["MIDOJO_URL"].strip(),
         model=environ["AGENT_MODEL"].strip(),
         model_base_url=environ["AGENT_MODEL_BASE_URL"].strip(),
         model_api_key=environ["AGENT_MODEL_API_KEY"],
@@ -336,13 +331,7 @@ class Agent:
             for name, command, port, env, log in (
                 (
                     failures.MCP_SERVER,
-                    mcp_command(
-                        settings.python_mcp,
-                        domain=settings.domain,
-                        port=mcp_port,
-                        midojo_url=inputs.midojo_url,
-                        midojo_log=self.evidence / MCP_CALLS,
-                    ),
+                    mcp_command(settings.python_mcp, domain=settings.domain, port=mcp_port),
                     mcp_port,
                     server_environment(
                         environ, venv_bin=venv_bin, tiktoken_dir=settings.tiktoken_dir

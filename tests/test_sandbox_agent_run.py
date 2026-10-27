@@ -3,89 +3,28 @@
 Real OGX would need the ``gateway`` extra, a model and the sandbox image, so a
 fake Responses server stands in for it (``sandbox_fakes/fake_ogx.py``),
 started through a fake ``python-ogx``. In the two-turn test the MCP server is
-the real ``mini_agents`` server in MiDojo mode, started through a
-``python-mcp`` that runs this venv's interpreter, against a fake control plane
-on loopback. The failure tests use a fake MCP server (``fake_mcp.py``) that
-only listens. No model calls, no network beyond loopback.
+the real ``mini_agents`` server, started through a ``python-mcp`` that runs
+this venv's interpreter. The failure tests use a fake MCP server
+(``fake_mcp.py``) that only listens. No model calls, no network beyond
+loopback.
 """
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import signal
 import subprocess
 import sys
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
-from mini_agents.kernel import mcp_server
-
 FAKES = Path(__file__).parent / "sandbox_fakes"
 SCRIPT = Path(sys.executable).parent / "mini-agents-sandbox-agent"
-TOKEN = "tok-sandbox"
 INSTRUCTIONS = "You are Klarna's support agent."
 RELAY_URL = "http://host.openshell.internal:18006/v1"
-BASE = json.loads(
-    (Path(mcp_server.__file__).parent.parent / "midojo-base.json").read_text()
-)
-
-
-class ControlPlane:
-    """MiDojo's agent API on loopback: serves the klarna ledger, records calls."""
-
-    def __init__(self):
-        self.requests = []
-        environment = copy.deepcopy(BASE["targets"]["klarna"]["environment"])
-        plane = self
-
-        class Handler(BaseHTTPRequestHandler):
-            def _answer(self, status, body):
-                length = int(self.headers.get("Content-Length") or 0)
-                content = self.rfile.read(length) if length else b""
-                plane.requests.append(
-                    {
-                        "method": self.command,
-                        "path": self.path,
-                        "authorization": self.headers.get("Authorization"),
-                        "body": json.loads(content) if content else None,
-                    }
-                )
-                payload = json.dumps(body).encode()
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-
-            def do_GET(self):  # noqa: N802
-                self._answer(200, environment)
-
-            def do_PUT(self):  # noqa: N802
-                self._answer(200, {})
-
-            def do_POST(self):  # noqa: N802
-                self._answer(201, {})
-
-            def log_message(self, format, *args):  # noqa: A002
-                pass
-
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-
-    def __enter__(self):
-        self.thread.start()
-        return self
-
-    def __exit__(self, *exc):
-        self.server.shutdown()
-        self.server.server_close()
 
 
 def _wrapper(path: Path, *program: str) -> Path:
@@ -123,15 +62,13 @@ def sandbox(tmp_path):
                     pass
 
 
-def _environment(control_url, record, *, index, count, **extra):
+def _environment(record, *, index, count, **extra):
     env = {
         name: value
         for name, value in os.environ.items()
         if not name.startswith(("MIDOJO_", "AGENT_", "FAKE_"))
     }
     env.update(
-        MIDOJO_URL=control_url,
-        MIDOJO_SESSION_TOKEN=TOKEN,
         AGENT_MODEL="test-model",
         AGENT_MODEL_BASE_URL=RELAY_URL,
         AGENT_MODEL_API_KEY="placeholder",
@@ -206,34 +143,38 @@ def _running(pid):
 def test_two_turns_start_once_continue_the_response_and_leave_evidence(sandbox):
     """Turn 1 starts the real MCP server and the fake OGX; turn 2 reuses both.
 
-    The fake OGX calls one tool per turn on the real server, so the server's
-    MiDojo log and the control plane see real calls.
+    The fake OGX calls one tool per turn on the real server, so both turns see
+    a real tool result. The runtime still sets MiDojo's URL and token here, as
+    it may; neither reaches OGX.
     """
 
-    with ControlPlane() as plane:
-        env = dict(FAKE_OGX_CALL_TOOL="1")
-        first = _turn(
-            sandbox,
-            "Where is my order?",
-            _environment(plane.url, sandbox["record"], index=0, count=2, **env),
-            mcp="real_mcp",
-        )
-        assert first.returncode == 0, first.stderr
-        assert first.stdout == "reply 1\n"
-        started = _state(sandbox)
-        assert _running(started["mcp"]["pid"]) and _running(started["ogx"]["pid"])
-        for name in ("mcp", "ogx"):
-            assert started[name]["identity"].startswith(("proc-start:", "ps-lstart:"))
-        assert _summary(sandbox)["final"] is False
+    env = dict(
+        FAKE_OGX_CALL_TOOL="1",
+        MIDOJO_URL="http://host.openshell.internal:18007",
+        MIDOJO_SESSION_TOKEN="tok-sandbox",
+    )
+    first = _turn(
+        sandbox,
+        "Where is my order?",
+        _environment(sandbox["record"], index=0, count=2, **env),
+        mcp="real_mcp",
+    )
+    assert first.returncode == 0, first.stderr
+    assert first.stdout == "reply 1\n"
+    started = _state(sandbox)
+    assert _running(started["mcp"]["pid"]) and _running(started["ogx"]["pid"])
+    for name in ("mcp", "ogx"):
+        assert started[name]["identity"].startswith(("proc-start:", "ps-lstart:"))
+    assert _summary(sandbox)["final"] is False
 
-        second = _turn(
-            sandbox,
-            "-1 refund it, please",
-            _environment(plane.url, sandbox["record"], index=1, count=2, **env),
-            mcp="real_mcp",
-        )
-        assert second.returncode == 0, second.stderr
-        assert second.stdout == "reply 2\n"
+    second = _turn(
+        sandbox,
+        "-1 refund it, please",
+        _environment(sandbox["record"], index=1, count=2, **env),
+        mcp="real_mcp",
+    )
+    assert second.returncode == 0, second.stderr
+    assert second.stdout == "reply 2\n"
 
     state = _state(sandbox)
     assert state["mcp"] == started["mcp"]
@@ -266,20 +207,8 @@ def test_two_turns_start_once_continue_the_response_and_leave_evidence(sandbox):
         assert request["env"]["OPENAI_API_KEY"] == "placeholder"
         assert "ORD-101" in request["tool_result"]
 
-    # The server took the token from its environment: no header reached it.
-    calls = [r for r in plane.requests if r["path"] == "/agent/function-calls"]
-    assert len(calls) == 2
-    assert {r["authorization"] for r in plane.requests} == {f"Bearer {TOKEN}"}
-
     evidence = sandbox["workdir"] / ".asago"
-    assert sorted(p.name for p in evidence.iterdir()) == [
-        "mcp-calls.jsonl",
-        "ogx.log",
-        "run-summary.json",
-    ]
-    log = _lines(evidence / "mcp-calls.jsonl")
-    assert [line["function"] for line in log] == ["lookup_order"] * 2
-    assert [line["report"] for line in log] == ["ok", "ok"]
+    assert sorted(p.name for p in evidence.iterdir()) == ["ogx.log", "run-summary.json"]
     assert "fake-ogx: POST /v1/responses request 2" in (evidence / "ogx.log").read_text()
 
     summary = _summary(sandbox)
@@ -300,18 +229,13 @@ def test_two_turns_start_once_continue_the_response_and_leave_evidence(sandbox):
 
 @pytest.mark.parametrize(("victim", "reason"), [("ogx", "ogx-gone"), ("mcp", "mcp-server-gone")])
 def test_a_process_that_dies_between_turns_fails_the_next_turn(sandbox, victim, reason):
-    with ControlPlane() as plane:
-        first = _turn(
-            sandbox, "hi", _environment(plane.url, sandbox["record"], index=0, count=2)
-        )
-        assert first.returncode == 0, first.stderr
-        started = _state(sandbox)
-        os.killpg(started[victim]["pid"], signal.SIGKILL)
-        _wait_gone(started[victim]["pid"])
+    first = _turn(sandbox, "hi", _environment(sandbox["record"], index=0, count=2))
+    assert first.returncode == 0, first.stderr
+    started = _state(sandbox)
+    os.killpg(started[victim]["pid"], signal.SIGKILL)
+    _wait_gone(started[victim]["pid"])
 
-        second = _turn(
-            sandbox, "again", _environment(plane.url, sandbox["record"], index=1, count=2)
-        )
+    second = _turn(sandbox, "again", _environment(sandbox["record"], index=1, count=2))
 
     assert second.returncode != 0
     assert second.stdout == ""
@@ -339,18 +263,13 @@ def _summary_is_a_directory(sandbox):
     [(_read_only_state, "state-write-failed"), (_summary_is_a_directory, "evidence-write-failed")],
 )
 def test_a_turn_whose_state_or_evidence_cannot_be_written_fails(sandbox, break_it, reason):
-    with ControlPlane() as plane:
-        first = _turn(
-            sandbox, "hi", _environment(plane.url, sandbox["record"], index=0, count=2)
-        )
-        assert first.returncode == 0, first.stderr
-        break_it(sandbox)
-        try:
-            second = _turn(
-                sandbox, "again", _environment(plane.url, sandbox["record"], index=1, count=2)
-            )
-        finally:
-            sandbox["state"].chmod(0o700)
+    first = _turn(sandbox, "hi", _environment(sandbox["record"], index=0, count=2))
+    assert first.returncode == 0, first.stderr
+    break_it(sandbox)
+    try:
+        second = _turn(sandbox, "again", _environment(sandbox["record"], index=1, count=2))
+    finally:
+        sandbox["state"].chmod(0o700)
 
     assert second.returncode != 0
     # OGX answered, but the reply is not printed: the turn did not persist.
@@ -368,13 +287,12 @@ def test_a_turn_whose_state_or_evidence_cannot_be_written_fails(sandbox, break_i
     ],
 )
 def test_a_server_that_never_listens_fails_the_first_turn(sandbox, extra, reason):
-    with ControlPlane() as plane:
-        result = _turn(
-            sandbox,
-            "hi",
-            _environment(plane.url, sandbox["record"], index=0, count=1, **extra),
-            listen_timeout=1,
-        )
+    result = _turn(
+        sandbox,
+        "hi",
+        _environment(sandbox["record"], index=0, count=1, **extra),
+        listen_timeout=1,
+    )
 
     assert result.returncode != 0
     assert result.stdout == ""

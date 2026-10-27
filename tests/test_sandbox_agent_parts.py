@@ -17,7 +17,7 @@ import pytest
 
 from mini_agents.sandbox_agent import cli, failures
 from mini_agents.sandbox_agent.environment import (
-    SCRUBBED_FROM_OGX,
+    SCRUBBED,
     ogx_environment,
     server_environment,
 )
@@ -304,14 +304,8 @@ def test_the_request_goes_to_the_responses_path():
 # Processes
 
 
-def test_the_commands_use_the_configured_interpreters(tmp_path):
-    assert mcp_command(
-        Path("/venv/bin/python-mcp"),
-        domain="occiai",
-        port=20001,
-        midojo_url="http://host.openshell.internal:18007",
-        midojo_log=tmp_path / "mcp-calls.jsonl",
-    ) == [
+def test_the_commands_use_the_configured_interpreters():
+    assert mcp_command(Path("/venv/bin/python-mcp"), domain="occiai", port=20001) == [
         "/venv/bin/python-mcp",
         "-m",
         "mini_agents",
@@ -321,10 +315,6 @@ def test_the_commands_use_the_configured_interpreters(tmp_path):
         "127.0.0.1",
         "--port",
         "20001",
-        "--midojo-url",
-        "http://host.openshell.internal:18007",
-        "--midojo-log",
-        str(tmp_path / "mcp-calls.jsonl"),
     ]
     assert ogx_command(Path("/venv/bin/python-ogx"), Path("/s/ogx-config.yaml")) == [
         "/venv/bin/python-ogx",
@@ -479,8 +469,8 @@ def test_ogx_gets_neither_midojo_url_nor_token():
         tiktoken_dir=Path("/opt/app-root/tiktoken"),
         api_key="placeholder",
     )
-    assert SCRUBBED_FROM_OGX == ("MIDOJO_SESSION_TOKEN", "MIDOJO_URL")
-    assert not set(SCRUBBED_FROM_OGX) & set(env)
+    assert SCRUBBED == ("MIDOJO_SESSION_TOKEN", "MIDOJO_URL")
+    assert not set(SCRUBBED) & set(env)
     assert env["OPENAI_API_KEY"] == "placeholder"
     assert env["PATH"] == "/opt/app-root/.venv/bin:/usr/local/bin:/usr/bin:/bin"
     assert env["TIKTOKEN_CACHE_DIR"] == "/opt/app-root/tiktoken"
@@ -488,14 +478,14 @@ def test_ogx_gets_neither_midojo_url_nor_token():
     assert "MIDOJO_SESSION_TOKEN" in ENVIRON
 
 
-def test_the_server_keeps_midojo_url_and_token():
+def test_the_server_gets_neither_midojo_url_nor_token():
     env = server_environment(
         ENVIRON,
         venv_bin=Path("/opt/app-root/.venv/bin"),
         tiktoken_dir=Path("/opt/app-root/tiktoken"),
     )
-    assert env["MIDOJO_URL"] == ENVIRON["MIDOJO_URL"]
-    assert env["MIDOJO_SESSION_TOKEN"] == "tok"
+    assert not set(SCRUBBED) & set(env)
+    assert env["HOME"] == "/sandbox"
     assert env["PATH"] == "/opt/app-root/.venv/bin:/usr/local/bin:/usr/bin:/bin"
     assert env["TIKTOKEN_CACHE_DIR"] == "/opt/app-root/tiktoken"
     assert "OPENAI_API_KEY" not in env
@@ -560,8 +550,6 @@ def test_the_summary_and_ogx_log_land_in_the_evidence_dir(tmp_path):
 
 
 FULL = {
-    "MIDOJO_URL": "http://host.openshell.internal:18007",
-    "MIDOJO_SESSION_TOKEN": "tok",
     "AGENT_MODEL": "m",
     "AGENT_MODEL_BASE_URL": RELAY,
     "AGENT_MODEL_API_KEY": "placeholder",

@@ -42,15 +42,3 @@ def _plain(value):
     if isinstance(value, (list, tuple)):
         return [_plain(item) for item in value]
     return value
-
-
-def rebuild_records(kind: str, record_class, raw):
-    """Rebuild a container of records: ``dict``, ``list`` or ``dict_of_lists``."""
-    if kind == "dict":
-        return {key: record_class(**record) for key, record in raw.items()}
-    if kind == "list":
-        return [record_class(**record) for record in raw]
-    return {
-        key: [record_class(**record) for record in records]
-        for key, records in raw.items()
-    }

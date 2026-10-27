@@ -1,9 +1,9 @@
 """No domain exposes a tool that executes commands, touches files or fetches URLs.
 
-In the sandbox the MCP server's interpreter is the only process allowed to
-reach MiDojo's control plane, which holds the answer key. The model reaches
-that process only through the domain tools, so none of them may run a command,
-open a shell, read or write a file, or make a request to a URL.
+In the sandbox the MCP server's interpreter may reach a host port (the
+policy's ``control_plane`` rule) that no other process may reach. The model
+reaches that process only through the domain tools, so none of them may run a
+command, open a shell, read or write a file, or make a request to a URL.
 
 The primary guard is ``REVIEWED_TOOLS``: each domain's registered tool list,
 safe and unsafe build, must equal it exactly. A new tool fails the test until

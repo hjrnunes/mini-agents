@@ -4,7 +4,7 @@ It reads the port from the rendered config and serves ``POST /v1/responses``
 on loopback. For each request it appends a line to ``$FAKE_OGX_RECORD``: the
 body, its own PID, and which variables its environment holds. With
 ``FAKE_OGX_CALL_TOOL=1`` it calls ``lookup_order`` on the request's MCP server
-over SSE, without a session header, as OGX would. It answers with response
+over SSE, as OGX would. It answers with response
 ID ``resp-<n>`` and reply ``reply <n>``.
 
 ``FAKE_OGX_MODE=silent`` runs without ever listening; ``exit`` exits at once.

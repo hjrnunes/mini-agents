@@ -130,7 +130,7 @@ gives them the venv's site-packages:
 
 | Copy | Runs | Egress |
 |---|---|---|
-| `/opt/app-root/.venv/bin/python-mcp` | the domain's MCP server (`python-mcp /opt/app-root/.venv/bin/mini-agents ...`) | MiDojo's control plane |
+| `/opt/app-root/.venv/bin/python-mcp` | the domain's MCP server (`python-mcp /opt/app-root/.venv/bin/mini-agents ...`) | the `control_plane` host port (the server itself opens no connection) |
 | `/opt/app-root/.venv/bin/python-ogx` | OGX (`python-ogx /opt/app-root/.venv/bin/ogx run ...`) | the model relay |
 
 Every other process, the stock interpreter included, reaches nothing.
@@ -226,10 +226,9 @@ the message is allowed and dropped. Only a lone `--help` or `-h` prints help.
 
 **First turn** (`MIDOJO_TURN_INDEX` unset or `0`):
 
-1. It starts the domain's safe server in MiDojo mode on a free `127.0.0.1`
-   port: `python-mcp -m mini_agents --domain <domain> --host 127.0.0.1
-   --midojo-url "$MIDOJO_URL" --midojo-log /sandbox/workdir/.asago/mcp-calls.jsonl`.
-   The server reads the session token from `MIDOJO_SESSION_TOKEN`.
+1. It starts the domain's safe server on a free `127.0.0.1` port:
+   `python-mcp -m mini_agents --domain <domain> --host 127.0.0.1 --port <port>`,
+   a plain server with the domain's default ledger.
 2. It writes OGX's config to `/tmp/agent-state/ogx-config.yaml` and starts
    OGX with `python-ogx -m ogx.cli.ogx run <config> --insecure`. The config
    holds:
@@ -275,7 +274,6 @@ header.
 | Input | Use |
 |---|---|
 | `MIDOJO_TURN_INDEX`, `MIDOJO_TURN_COUNT` | this turn, 0-based (default 0), of how many (default 1); the last turn is `count - 1` |
-| `MIDOJO_URL`, `MIDOJO_SESSION_TOKEN` | the control plane and the evaluation's token, for the server only |
 | `AGENT_MODEL` | the request's `model` and OGX's registered model |
 | `AGENT_MODEL_BASE_URL` | orch's model relay as the sandbox reaches it, `http://host.openshell.internal:<port>/<base>` |
 | `AGENT_MODEL_API_KEY` | the relay's placeholder key, passed to OGX as `OPENAI_API_KEY` |
@@ -290,15 +288,15 @@ apply the image's `ENV`:
 - `PATH` is the venv's `bin` followed by `/usr/local/bin:/usr/bin:/bin`;
 - `TIKTOKEN_CACHE_DIR` is `/opt/app-root/tiktoken`.
 
-OGX's environment has no `MIDOJO_URL` and no `MIDOJO_SESSION_TOKEN`. Both
-servers run with `/tmp/agent-state` as their working directory.
+Neither server needs MiDojo's `MIDOJO_URL` or `MIDOJO_SESSION_TOKEN`; when
+the runtime still sets them, the command passes them to neither. Both servers
+run with `/tmp/agent-state` as their working directory.
 
 **State** stays in `/tmp/agent-state`, never in the workdir, because MiDojo
 observes every new workdir file. **Evidence** goes to `/sandbox/workdir/.asago/`:
 
 | File | Written |
 |---|---|
-| `mcp-calls.jsonl` | by the server (its `--midojo-log`), from the first call on |
 | `ogx.log` | copied from `/tmp/agent-state/ogx.log` after every turn |
 | `run-summary.json` | after every run: turns, failed turns and rejected runs |
 
@@ -355,91 +353,6 @@ The flags `--state-dir`, `--workdir`, `--python-mcp`, `--python-ogx`,
 defaults. The defaults are the sandbox contract's paths
 (`/opt/app-root/.venv/bin/python-mcp`, `/opt/app-root/.venv/bin/python-ogx`).
 The tests use the flags to run the command offline, with fakes.
-
-## Reach a target with a MiDojo session header
-
-MiDojo reaches a target through the OGX gateway. The caller sends
-`X-Midojo-Session` in the `headers` field of the MCP tool block of the
-`POST /v1/responses` request. The gateway forwards that header on the
-`GET /sse` request and on every `POST /messages/` request (`initialize`,
-`tools/list`, `tools/call`) it sends to the MCP server.
-
-```json
-{
-  "type": "mcp",
-  "server_label": "klarna-safe",
-  "server_url": "http://localhost:8888/sse",
-  "headers": {"X-Midojo-Session": "<session token>"},
-  "require_approval": "never"
-}
-```
-
-A server started without `--midojo-url` ignores the header. A server started
-with it reads the header on every `tools/call` (see below). Do not set
-`Authorization` in `headers`: the gateway rejects it. Use
-`--protocol openai` with `midojo-run`; `--protocol http` has no endpoint here,
-because the servers do not accept `{"prompt": ...}`.
-
-### MiDojo mode (`--midojo-url`)
-
-```bash
-uv run python -m mini_agents --domain klarna --port 8888 \
-  --midojo-url http://127.0.0.1:8000 \
-  --midojo-log run/midojo_capture/calls.jsonl
-```
-
-In MiDojo mode the evaluation's ledger lives in MiDojo. For every tool call
-the server:
-
-1. Takes the session token from `X-Midojo-Session`, or from
-   `MIDOJO_SESSION_TOKEN` when the request has no header. With neither, the
-   call fails with `MiDojo session token missing`.
-2. On the first call of a token, reads `GET /agent/environment` and replaces
-   its ledger with that environment. This is how a seed arrives. A new token
-   loads again, so a second evaluation never continues the first one's
-   ledger. When the read fails, the call fails with
-   `MiDojo environment unavailable`.
-3. Starts the call with `POST /agent/function-calls/start`
-   (`call_id`, `function`, `args`). The server makes one `call_id` per call,
-   `mini-agents:<uuid4>`. MiDojo now holds the call as unfinished. When the
-   start fails, the tool does not run and the call fails with
-   `MiDojo call start failed`.
-4. Runs the tool.
-5. Pushes the whole ledger with `PUT /agent/environment`, after reads too:
-   lookups append audit-log entries.
-6. Finishes the call with `POST /agent/function-calls`
-   (`call_id`, `function`, `args`, `result`, `error`, `blocked: false`), with
-   the start's `call_id`. A call with the tool's own error is reported with
-   `result: ""` and its error text: a call FastMCP rejects, such as one
-   missing a required argument or naming an unknown tool, and a tool that
-   raises. FastMCP hands all of these over as a `ToolError`.
-7. Returns the result. A failed push or report does not fail the call.
-
-A call cancelled or interrupted after its start and before its report (an
-`asyncio.CancelledError`, or any exception that is not a `ToolError`, such as
-a failure of the framework itself) is not finished: the server stops where it was, sends no finish, and lets the
-cancellation or exception propagate. MiDojo keeps that call as unfinished
-(`complete: false`).
-
-Each request sends `Authorization: Bearer <session token>` and nothing else:
-no model or judge key. `--midojo-url` and `--seed-file` are exclusive, because
-MiDojo provisions the seed.
-
-`--midojo-log PATH` (needs `--midojo-url`) appends one JSON line per call:
-
-```json
-{"sequence": 1, "call_id": "mini-agents:6f1c2a9e-4b7d-4e2a-9c3f-1d8e5b7a0c42", "function": "lookup_order", "load": "ok", "start": "ok", "push": "ok", "report": "ok", "failure": null}
-```
-
-`call_id` is the id sent with the start and the finish, or `null` when no
-start was attempted. `load` is `ok`, `failed`, `no_token`, or `null` when the
-session was already loaded. `start` and `push` are `ok`, `failed`, or `null`
-when not attempted. `report` is `ok`, `failed`, `unfinished` when the call
-started but was cancelled or interrupted before its report, or `null` when
-the call never started. `failure` describes what failed. A line is a failure
-when `load` is `failed` or `no_token`, or `start`, `push` or `report` is
-`failed`. A line whose `report` is `unfinished` is not a failure: the call was
-attempted but its outcome is unknown, so a reader treats it as inconclusive.
 
 ## Install (tools only)
 

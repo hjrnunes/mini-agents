@@ -1,8 +1,8 @@
 """The in-sandbox agent command, ``mini-agents-sandbox-agent``.
 
 MiDojo's openshell runtime execs it once per turn inside the sandbox image.
-The first turn starts the domain's safe MCP server in MiDojo mode and OGX,
-both detached and bound to loopback; every turn sends one Responses request
+The first turn starts the domain's safe MCP server and OGX, both detached
+and bound to loopback; every turn sends one Responses request
 to OGX and prints only the reply on stdout. Turn state lives in
 ``/tmp/agent-state``, evidence in ``/sandbox/workdir/.asago``. README "Sandbox
 agent command" has the inputs and the files.

@@ -1,12 +1,10 @@
-"""Evidence in ``<workdir>/.asago``, which MiDojo carries out of the sandbox.
+"""Evidence in ``<workdir>/.asago``, which the runtime carries out of the sandbox.
 
-- ``mcp-calls.jsonl``: the server's ``--midojo-log``, written there directly
-  from the first call on;
 - ``ogx.log``: OGX's output, copied there after every turn;
 - ``run-summary.json``: rewritten after every run, failed and rejected ones
   included.
 
-The summary is self-reported by code inside the sandbox; the logs let the
+The summary is self-reported by code inside the sandbox; OGX's log lets the
 consumer's parsers cross-check it.
 """
 
@@ -21,7 +19,6 @@ from typing import Any
 from mini_agents.sandbox_agent.state import AgentState, Turn, write_json_atomic
 
 EVIDENCE_DIR = ".asago"
-MCP_CALLS = "mcp-calls.jsonl"
 OGX_LOG = "ogx.log"
 RUN_SUMMARY = "run-summary.json"
 SCHEMA = "mini-agents-run-summary-v1"

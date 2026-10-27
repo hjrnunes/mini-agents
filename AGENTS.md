@@ -90,18 +90,6 @@ consumer's suite compiler. Regenerate it with
 into `ENVIRONMENT_ATTRIBUTES` and `RECORD_CONTAINERS` in that `state.py`, and no
 ledger text may look like `{word:word}` (MiDojo would blank it).
 
-**MiDojo mode.** `--midojo-url` installs a `MidojoBinding`
-(`kernel/midojo_mode.py`) on the server. `_TargetMCP.call_tool` hands every
-call to it: on a new session token (`X-Midojo-Session`, else
-`MIDOJO_SESSION_TOKEN`) it replaces `executor.state` with the evaluation's
-environment, runs the tool, pushes `state.to_environment()`, reports the call,
-and appends a line to `--midojo-log`. The hook sits at `call_tool`, not around
-`executor.execute`, because FastMCP validates arguments inside the tool and a
-rejected call must still be reported. Every builder passes its executor to
-`_mcp`, or the binding cannot reach the ledger. Without the flag nothing
-changes and no request leaves the process. README "MiDojo mode" has the log
-line and the failure rules.
-
 ## Testing
 
 Tests instantiate the safe and unsafe executors directly and assert on the

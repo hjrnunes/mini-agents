@@ -6,19 +6,17 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 from typing import Annotated, Any, Mapping, Optional, Sequence, TypedDict
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.types import CallToolResult, ContentBlock, TextContent
+from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, TypeAdapter, WithJsonSchema
 
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.domains.klarna.state import KlarnaState
 from mini_agents.domains.occiai.state import OcciAIState
-from mini_agents.kernel.midojo_mode import MidojoBinding
 from mini_agents.kernel.seeds import EXIT_CODE as SEED_EXIT_CODE
 from mini_agents.kernel.seeds import SeedError, seeded_state
 
@@ -138,14 +136,11 @@ class _TargetMCP(FastMCP):
 
     The observer stays registered, and a call by name reaches it in every
     view. ``list_observer`` (``--state-summary``) lists it again, except to a
-    client in the assistant view. With a MiDojo binding (``--midojo-url``)
-    every tool call goes through it: see ``kernel/midojo_mode.py``.
+    client in the assistant view.
     """
 
     observer: str | None = None
     list_observer: bool = False
-    executor: Any = None
-    midojo: MidojoBinding | None = None
 
     async def list_tools(self) -> list[MCPTool]:
         tools = await super().list_tools()
@@ -155,15 +150,8 @@ class _TargetMCP(FastMCP):
             return tools
         return [tool for tool in tools if tool.name != self.observer]
 
-    async def call_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> Sequence[ContentBlock] | dict[str, Any]:
-        if self.midojo is None:
-            return await super().call_tool(name, arguments)
-        return await self.midojo.call(self, name, arguments, super().call_tool)
 
-
-def _mcp(name: str, instructions: str, observer: str, executor: Any) -> FastMCP:
+def _mcp(name: str, instructions: str, observer: str) -> FastMCP:
     mcp = _TargetMCP(
         name=name,
         instructions=instructions,
@@ -173,7 +161,6 @@ def _mcp(name: str, instructions: str, observer: str, executor: Any) -> FastMCP:
         ),
     )
     mcp.observer = observer
-    mcp.executor = executor
     return mcp
 
 
@@ -212,7 +199,6 @@ def build_klarna_mcp(state: Optional[KlarnaState] = None) -> FastMCP:
             "tool-level business rules depending on the server mode."
         ),
         "get_klarna_state_summary",
-        executor,
     )
 
     @mcp.tool()
@@ -277,7 +263,6 @@ def build_airbnb_mcp(state: Optional[AirbnbState] = None) -> FastMCP:
             "workflow guardrails in safe mode."
         ),
         "get_airbnb_state_summary",
-        executor,
     )
 
     @mcp.tool()
@@ -380,7 +365,6 @@ def build_occiai_mcp(state: Optional[OcciAIState] = None) -> FastMCP:
             "Summaries are drafts; EHR commit requires clinical review in safe mode."
         ),
         "get_occiai_state_summary",
-        executor,
     )
 
     # patient_id stays an argument, though optional: a read tool with an empty
@@ -508,37 +492,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             f"a call by name always works). Same as {STATE_SUMMARY_ENV}=1."
         ),
     )
-    parser.add_argument(
-        "--midojo-url",
-        metavar="URL",
-        help=(
-            "MiDojo control plane. Load each evaluation's ledger from it, push "
-            "the ledger after every call and report every call."
-        ),
-    )
-    parser.add_argument(
-        "--midojo-log",
-        metavar="PATH",
-        help="Append one JSON line per tool call in MiDojo mode.",
-    )
     args = parser.parse_args(argv)
-    if args.midojo_url and args.seed_file:
-        parser.error(
-            "--midojo-url and --seed-file are exclusive: MiDojo provisions the seed"
-        )
-    if args.midojo_log and not args.midojo_url:
-        parser.error("--midojo-log needs --midojo-url")
 
     mcp = BUILDERS[args.domain](_state_from_args(args))
     mcp.list_observer = args.state_summary or state_summary_enabled(os.environ)
-    if args.midojo_url:
-        log_path = Path(args.midojo_log) if args.midojo_log else None
-        mcp.midojo = MidojoBinding(args.midojo_url, log_path)
     mode_label = "UNSAFE (red-team)" if UNSAFE_MODE else "SAFE"
     print(f"Mini-agent MCP server starting [{args.domain} {mode_label}]")
     print(f"    SSE endpoint → http://{args.host}:{args.port}/sse")
-    if args.midojo_url:
-        print(f"    MiDojo control plane → {args.midojo_url}")
     mcp.settings.host = args.host
     mcp.settings.port = args.port
     mcp.run(transport="sse")
