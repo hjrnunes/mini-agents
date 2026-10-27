@@ -423,7 +423,7 @@ uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
 
 The file is in one of two formats, told apart by `schema_version`:
 
-- `mini-agents-seed-v1` (above; `seed.schema.json`).
+- `mini-agents-seed-v1` (above).
 - `artifact-seed-v1`, the `seed.json` of an artifact package. It has the same
   keys, but `carrier_operation` is required, the file has no item cap, and
   each item's `content` holds at most its slot's `max_chars` characters, as
@@ -437,13 +437,13 @@ The file is in one of two formats, told apart by `schema_version`:
 - `carrier_operation` is optional in `mini-agents-seed-v1`. When present, it
   must equal the carrier of every item's slot.
 - `record_ref` must be a record the slot's carrier returns in the current
-  mode. The safe and unsafe executors return different records, so the
-  manifest lists `records` (safe) and `unsafe_records`, and each variant's
-  `runtime-spec.yaml` lists its own `records`.
+  mode. The safe and unsafe executors return different records, so each
+  variant's `runtime-spec.yaml` lists its own `records`.
 - For a `mini-agents-seed-v1` file, after the text is planted and before the
   server starts, the process writes
-  `<seed-file>.applied.json`: `schema_version`, `domain`, `mode`, `sha256` of
-  the seed file's bytes, and `slots` (the slot id of each item, in file order).
+  `<seed-file>.applied.json` (`src/mini_agents/seed-applied.schema.json`):
+  `schema_version`, `domain`, `mode`, `sha256` of the seed file's bytes, and
+  `slots` (the slot id of each item, in file order).
   This file is the only report of the seed. The state-summary tool returns the
   planted text for some slots, so no tool reports seeds.
 - A refused seed exits with code 3 and writes one line to stderr:
@@ -509,21 +509,3 @@ uv run python scripts/gen_declarations.py --check  # fail if stale
 tools over an in-memory MCP session and fails while `tools-list.json` differs,
 while either file differs from the generated one, or while a slot's
 `max_chars` is not the limit the seed hook enforces.
-
-## Tool manifest
-
-`src/mini_agents/tool-manifest.json` lists, for each target, every tool with
-its `access` (`read` or `write`) and the seed slots whose text it can return,
-plus the seed slots themselves. JSON Schemas ship next to it:
-`tool-manifest.schema.json`, `seed.schema.json` and `seed-applied.schema.json`.
-
-Never edit the manifest by hand. Regenerate it after you add, remove or rename
-a tool or a slot:
-
-```bash
-uv run python scripts/gen_manifest.py          # write
-uv run python scripts/gen_manifest.py --check  # fail if stale
-```
-
-`tests/test_manifest.py` fails while the committed file differs from the
-generated one.

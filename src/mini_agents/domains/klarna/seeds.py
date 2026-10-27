@@ -1,8 +1,8 @@
 """Seed slots and tool access for MiniKlarna.
 
-``SLOTS`` is the only place a planted-text target is declared; the tool
-manifest is generated from it, so a slot added here without regenerating
-``tool-manifest.json`` fails ``tests/test_manifest.py``.
+``SLOTS`` is the only place a planted-text target is declared; the
+declaration files are generated from it, so a slot added here without
+regenerating them fails ``tests/test_declarations.py``.
 """
 
 from __future__ import annotations

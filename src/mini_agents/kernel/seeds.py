@@ -1,8 +1,7 @@
 """Startup seeding: plant consumer-authored text into one named record.
 
-Two formats are read: this package's ``mini-agents-seed-v1``
-(``seed.schema.json``), and ``artifact-seed-v1``, the ``seed.json`` of an
-artifact package. They differ in their bounds: the first caps the item count
+Two formats are read: this package's ``mini-agents-seed-v1``, and
+``artifact-seed-v1``, the ``seed.json`` of an artifact package. They differ in their bounds: the first caps the item count
 and every item's content, the second requires ``carrier_operation`` and bounds
 each item's content by its slot's ``max_chars``, which the declaration files
 state. Only the first writes ``<seed-file>.applied.json``.
@@ -88,8 +87,8 @@ class Slot:
     ``records`` and ``unsafe_records`` list the record ids the hook accepts in
     safe and unsafe mode. They differ where the two executors expose different
     records: a seed on a record the carrier never returns would reach no agent.
-    ``max_chars`` bounds one item's content; ``seed.schema.json`` states the
-    same limit for every slot.
+    ``max_chars`` bounds one item's content; each variant's
+    ``runtime-spec.yaml`` states it.
     """
 
     id: str

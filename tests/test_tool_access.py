@@ -1,4 +1,4 @@
-"""A tool's manifest access matches what it does to the ledger.
+"""A tool's access entry (``TOOL_ACCESS``) matches what it does to the ledger.
 
 "read" means the safe executor changes no record; "write" means the unsafe
 executor, which has no guardrails to refuse, changes one. Audit-log entries and
@@ -7,10 +7,12 @@ the session id do not count: lookups write them in every domain.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 
 import pytest
 
+from mini_agents.kernel import mcp_server
 from mini_agents.kernel.mcp_server import DOMAINS
 
 STATE_CLASS = {"klarna": "KlarnaState", "airbnb": "AirbnbState", "occiai": "OcciAIState"}
@@ -96,6 +98,34 @@ def _cases(access):
         for domain in DOMAINS
         for tool in _tools(domain, access)
     ]
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_the_access_table_names_every_registered_tool_and_nothing_else(domain):
+    server = mcp_server.BUILDERS[domain]()
+    # The state summary is registered but listed only on request.
+    server.list_observer = True
+    registered = {tool.name for tool in asyncio.run(server.list_tools())}
+    access = _seeds(domain).TOOL_ACCESS
+
+    assert set(access) == registered
+    assert set(access.values()) <= {"read", "write"}
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_every_tool_dispatches_in_both_executors(domain):
+    for unsafe in (False, True):
+        _, executor = _fresh(domain, unsafe)
+        for tool in _seeds(domain).TOOL_ACCESS:
+            assert hasattr(executor, f"_tool_{tool}"), (unsafe, tool)
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_a_slot_carrier_is_always_a_read_tool(domain):
+    seeds = _seeds(domain)
+
+    for slot in seeds.SLOTS:
+        assert seeds.TOOL_ACCESS[slot.carrier_operation] == "read", slot.id
 
 
 def test_the_call_table_covers_every_tool():

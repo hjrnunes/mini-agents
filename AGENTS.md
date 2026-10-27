@@ -38,23 +38,22 @@ client can call it by name, but `tools/list` leaves it out
 `MINI_AGENTS_STATE_SUMMARY=1` lists it again, except to a client that sends
 `X-Mini-Agents-View: assistant`. No server instruction names it. Pass each new
 builder its observer's name; code that needs every registered tool sets
-`list_observer = True` on the server first, as `kernel/manifest.py` does.
+`list_observer = True` on the server first, as `tests/test_tool_access.py`
+does.
 
 ## Adding a domain
 
 Touch, in order: `domains/<name>/` (`state.py`, `tools.py`, `tools_unsafe.py`,
 `seeds.py`), `mcp_server.py` (executor fn, builder, `BUILDERS`),
 `kernel/stack.py` (`MCP_SERVERS`), `ogx-config.yaml` and `docker-compose.yml`
-(the two ports, safe then unsafe), then regenerate the manifest with
-`uv run python scripts/gen_manifest.py` and
+(the two ports, safe then unsafe), then regenerate the declaration files with
 `uv run python scripts/gen_declarations.py`. A domain missing from `stack.py`
 starts nowhere and fails silently — check both files before declaring done.
 
 **Adding a tool** also needs an entry in the domain's `seeds.py` `TOOL_ACCESS`
-(`write` when it creates or changes a ledger record, otherwise `read`), a
-regenerated manifest and regenerated declaration files. The manifest generator
-stops on a registered tool with no entry, and `tests/test_tool_access.py`
-needs the tool's arguments.
+(`write` when it creates or changes a ledger record, otherwise `read`) and
+regenerated declaration files. `tests/test_tool_access.py` fails on a
+registered tool with no entry, and needs the tool's arguments.
 
 ## Seeded state
 
@@ -66,13 +65,13 @@ rejects, unsafe lands).
 **Seed slots.** A free-text field that a read tool returns can be planted at
 startup (`--seed-file`). Declare it as a `Slot` in `domains/<name>/seeds.py`
 with the records each executor returns, add the call to the tables in
-`tests/test_seed_slots.py`, and regenerate `tool-manifest.json`. A slot needs
+`tests/test_seed_slots.py`, and regenerate the declaration files. A slot needs
 its carrier tool to return the field in both executors, or the record lists must
 differ the way `occiai.referral.reason` does. The twin's list holds every safe
-record, so a package seeded for the safe target also runs on the twin. Do not edit
-`tool-manifest.json` by hand. A slot's `max_chars` (2000 unless set) bounds an
-`artifact-seed-v1` item's content and must stay what `seed.schema.json` states
-for `mini-agents-seed-v1`.
+record, so a package seeded for the safe target also runs on the twin. A
+slot's `max_chars` (2000 unless set) bounds an `artifact-seed-v1` item's
+content; `runtime-spec.yaml` states it, and `mini-agents-seed-v1` caps every
+item at the same 2000.
 
 **Declaration files.** `src/mini_agents/declarations/<domain>/{safe,unsafe}/`
 holds `tools-list.json` (the default server's `tools/list` result) and

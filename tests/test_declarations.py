@@ -349,14 +349,9 @@ def _plant(domain, variant, raw):
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
 def test_each_slot_max_chars_is_the_limit_the_seed_hook_enforces(domain, variant):
-    schema = json.loads((PACKAGE / "seed.schema.json").read_text())
-    schema_limit = schema["properties"]["items"]["items"]["properties"]["content"][
-        "maxLength"
-    ]
-
     for slot in _shipped_spec(domain, variant)["seed_slots"]:
         limit = slot["max_chars"]
-        assert limit == schema_limit == MAX_CONTENT_CHARS
+        assert limit == MAX_CONTENT_CHARS
         for record in slot["records"]:
             _plant(domain, variant, _artifact_seed(slot, record, "x" * limit))
             with pytest.raises(SeedError) as refused:
