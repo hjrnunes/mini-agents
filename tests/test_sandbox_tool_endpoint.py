@@ -148,7 +148,7 @@ def _state():
     )
 
 
-def _main(tmp_path, environ):
+def _main(tmp_path, environ, *, alive=lambda pid: True):
     return cli.main(
         [
             "--domain",
@@ -164,7 +164,7 @@ def _main(tmp_path, environ):
             "hello",
         ],
         environ,
-        alive=lambda pid: True,
+        alive=alive,
         identity=lambda pid: f"id-{pid}",
     )
 
@@ -204,6 +204,68 @@ def test_a_turn_behind_the_interceptor_sends_its_tools_there(tmp_path, monkeypat
     assert (tool["server_url"], tool["authorization"]) == (URL, TOKEN)
     assert "headers" not in tool
     assert TOKEN not in _files_text(tmp_path / "agent-state", tmp_path / "workdir")
+
+
+def _first_turn_behind_the_interceptor():
+    """The state a first turn behind the interceptor leaves: OGX alone."""
+
+    state = _state()
+    state.interceptor, state.mcp = True, None
+    return state
+
+
+def test_a_later_turn_behind_the_interceptor_checks_ogx_alone(tmp_path, monkeypatch, capsys):
+    save_state(_first_turn_behind_the_interceptor(), tmp_path / "agent-state")
+    sent, checked = [], []
+    _answer(monkeypatch, sent)
+
+    def alive(pid):
+        checked.append(pid)
+        return True
+
+    assert _main(tmp_path, {**SECOND, TOOL_URL: URL, TOOL_TOKEN: TOKEN}, alive=alive) == 0
+    assert capsys.readouterr() == ("reply 2\n", "")
+    assert checked == [12]
+    (tool,) = sent[0]["tools"]
+    assert tool["server_url"] == URL
+    state = load_state(tmp_path / "agent-state")
+    assert state.interceptor and state.mcp is None
+
+
+def test_a_later_turn_without_the_interceptor_needs_the_server_the_first_did_not_start(
+    tmp_path, monkeypatch, capsys
+):
+    save_state(_first_turn_behind_the_interceptor(), tmp_path / "agent-state")
+    sent = []
+    _answer(monkeypatch, sent)
+    assert _main(tmp_path, SECOND) == 1
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.startswith(
+        "mini-agents-sandbox-agent: mcp-server-gone: the first turn did not start it"
+    )
+    assert TOOL_URL in err and TOOL_TOKEN in err
+    assert sent == []
+    summary = json.loads(summary_path(tmp_path / "workdir").read_text())
+    assert summary["exit_reasons"] == ["ok", "mcp-server-gone"]
+
+
+def test_a_later_turn_behind_the_interceptor_still_checks_a_server_the_first_started(
+    tmp_path, monkeypatch, capsys
+):
+    """A first turn without the interceptor started both; a later turn checks both."""
+
+    save_state(_state(), tmp_path / "agent-state")
+    _answer(monkeypatch, [])
+    checked = []
+
+    def alive(pid):
+        checked.append(pid)
+        return pid != 11
+
+    assert _main(tmp_path, {**SECOND, TOOL_URL: URL, TOOL_TOKEN: TOKEN}, alive=alive) == 1
+    assert checked == [11]
+    assert capsys.readouterr().err.startswith("mini-agents-sandbox-agent: mcp-server-gone: pid 11 ")
 
 
 def test_a_turn_without_the_interceptor_is_unchanged(tmp_path, monkeypatch):

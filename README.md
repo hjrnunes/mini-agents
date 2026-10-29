@@ -227,11 +227,14 @@ the message is allowed and dropped. Only a lone `--help` or `-h` prints help.
 
 1. It starts the domain's safe server on a free `127.0.0.1` port:
    `python-mcp -m mini_agents --domain <domain> --host 127.0.0.1 --port <port>`,
-   a plain server with the domain's default ledger.
+   a plain server with the domain's default ledger. Behind MiDojo's host
+   interceptor (below) it starts no server, and the steps below concern OGX
+   alone.
 2. It writes OGX's config to `/tmp/agent-state/ogx-config.yaml` and starts
    OGX with `python-ogx -m ogx.cli.ogx run <config> --insecure`. The config
    holds:
-   - one connector, `<domain>-safe`, pointing at the server's loopback `/sse`;
+   - one connector, `<domain>-safe`, pointing at the server's loopback `/sse`
+     (none behind the interceptor);
    - `server.host: 127.0.0.1`;
    - inference at `AGENT_MODEL_BASE_URL`, with the key read from
      `${env.OPENAI_API_KEY}`;
@@ -246,7 +249,8 @@ the message is allowed and dropped. Only a lone `--help` or `-h` prints help.
    (`--listen-timeout`) for both to listen. If one does not, it stops both
    and the turn fails.
 
-**Later turns** check both PIDs through `/proc/<pid>/stat`. A PID can be
+**Later turns** check the PIDs the first turn recorded (OGX's alone behind
+the interceptor) through `/proc/<pid>/stat`. A PID can be
 reused, so the first turn also records each process's identity: its start
 time, field 22 of `/proc/<pid>/stat` (`proc-start:<ticks>`). Without `/proc`
 (macOS, in tests) the identity is the start time from `ps -o lstart=`
@@ -301,8 +305,11 @@ and `MIDOJO_TOOL_TOKEN`, the token it accepts as `Authorization: Bearer
 has the interceptor's URL as `server_url` and the token as `authorization`, so
 OGX lists and calls the tools there, with that header; OGX refuses an
 `Authorization` in `headers` and leaves `authorization` out of the responses
-it stores and returns. The domain's server in the sandbox still starts but is
-never called. With neither set, the tool points at that server, as above.
+it stores and returns. The domain's server in the sandbox does not start:
+the first turn starts OGX alone, records that in the state, and later turns
+check OGX alone. A later turn with neither variable set after a first turn
+with both fails with `mcp-server-gone`. With neither set, the tool points at
+that server, as above.
 
 | `MIDOJO_TOOL_URL` | `MIDOJO_TOOL_TOKEN` | Turn |
 |---|---|---|
@@ -375,7 +382,7 @@ its original reason.
 | `process-start-failed` | an interpreter cannot be executed, or a started process's identity cannot be read |
 | `mcp-server-exited`, `ogx-exited` | the process exits during the first turn before it listens |
 | `mcp-server-not-listening`, `ogx-not-listening` | it runs but does not listen in time |
-| `mcp-server-gone`, `ogx-gone` | a later turn finds the first turn's process gone, or its PID held by another process |
+| `mcp-server-gone`, `ogx-gone` | a later turn finds the first turn's process gone, or its PID held by another process, or needs a server the first turn did not start |
 | `gateway-request-failed`, `gateway-response-invalid`, `gateway-response-failed` | OGX does not answer with 2xx, answers without a response ID, or reports the response failed |
 
 The flags `--state-dir`, `--workdir`, `--python-mcp`, `--python-ogx`,

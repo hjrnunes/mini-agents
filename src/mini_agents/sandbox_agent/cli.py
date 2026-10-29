@@ -13,7 +13,8 @@ The message is always the last argument, taken literally: ``--help``, ``-h``,
 
 With ``MIDOJO_TOOL_URL`` and ``MIDOJO_TOOL_TOKEN`` set, the request's MCP tool
 is MiDojo's host interceptor instead of the domain's server; one without the
-other fails the turn (``tool_endpoint``).
+other fails the turn (``tool_endpoint``). Behind the interceptor the first
+turn starts OGX alone, and later turns check OGX alone.
 """
 
 from __future__ import annotations
@@ -65,6 +66,8 @@ from mini_agents.sandbox_agent.summary import (
     write_run_summary,
 )
 from mini_agents.sandbox_agent.tool_endpoint import (
+    TOOL_TOKEN,
+    TOOL_URL,
     ToolEndpoint,
     read_tool_endpoint,
     redact,
@@ -215,7 +218,7 @@ class Agent:
             if index == 0:
                 self._start(state, inputs, environ)
             else:
-                self._check_running(state)
+                self._check_running(state, inputs)
             turn = self._send(state, inputs, message, index)
         except AgentFailure as failure:
             failed = Turn(
@@ -319,7 +322,12 @@ class Agent:
             except OSError as exc:
                 raise AgentFailure(reason, f"{directory}: {exc}") from exc
         venv_bin = settings.python_mcp.parent
-        mcp_port, ogx_port = free_ports(2)
+        # Behind the interceptor no server in the sandbox is called: start none.
+        state.interceptor = inputs.tool_endpoint is not None
+        if state.interceptor:
+            mcp_port, (ogx_port,) = None, free_ports(1)
+        else:
+            mcp_port, ogx_port = free_ports(2)
         try:
             config = render_ogx_config(
                 domain=settings.domain,
@@ -338,9 +346,9 @@ class Agent:
                 failures.STATE_WRITE_FAILED, f"{state_dir / OGX_CONFIG}: {exc}"
             ) from exc
 
-        started = []
-        try:
-            for name, command, port, env, log in (
+        servers = []
+        if mcp_port is not None:
+            servers.append(
                 (
                     failures.MCP_SERVER,
                     mcp_command(settings.python_mcp, domain=settings.domain, port=mcp_port),
@@ -349,20 +357,26 @@ class Agent:
                         environ, venv_bin=venv_bin, tiktoken_dir=settings.tiktoken_dir
                     ),
                     state_dir / MCP_LOG,
+                )
+            )
+        servers.append(
+            (
+                failures.OGX,
+                ogx_command(settings.python_ogx, config_path),
+                ogx_port,
+                ogx_environment(
+                    environ,
+                    venv_bin=venv_bin,
+                    tiktoken_dir=settings.tiktoken_dir,
+                    api_key=inputs.model_api_key,
                 ),
-                (
-                    failures.OGX,
-                    ogx_command(settings.python_ogx, config_path),
-                    ogx_port,
-                    ogx_environment(
-                        environ,
-                        venv_bin=venv_bin,
-                        tiktoken_dir=settings.tiktoken_dir,
-                        api_key=inputs.model_api_key,
-                    ),
-                    state_dir / OGX_LOG,
-                ),
-            ):
+                state_dir / OGX_LOG,
+            )
+        )
+
+        started = []
+        try:
+            for name, command, port, env, log in servers:
                 # cwd is the state directory: nothing a server writes by a
                 # relative path may land in the observed workdir.
                 process = start_detached(command, env=env, log=log, cwd=state_dir, name=name)
@@ -398,8 +412,22 @@ class Agent:
                 stop(process)
             raise
 
-    def _check_running(self, state: AgentState) -> None:
-        for name, process in ((failures.MCP_SERVER, state.mcp), (failures.OGX, state.ogx)):
+    def _check_running(self, state: AgentState, inputs: Inputs) -> None:
+        """Check what the first turn started: both servers, or behind the
+        interceptor OGX alone. A turn that needs the server in the sandbox
+        when the first turn started none fails."""
+
+        if state.interceptor and inputs.tool_endpoint is None:
+            raise AgentFailure(
+                failures.gone(failures.MCP_SERVER),
+                "the first turn did not start it: it called the tools through "
+                "MiDojo's interceptor, and this turn sets neither "
+                f"{TOOL_URL} nor {TOOL_TOKEN}",
+            )
+        processes = [(failures.OGX, state.ogx)]
+        if not state.interceptor:
+            processes.insert(0, (failures.MCP_SERVER, state.mcp))
+        for name, process in processes:
             if process is None:
                 raise AgentFailure(
                     failures.gone(name), "the first turn did not start it"
@@ -420,13 +448,18 @@ class Agent:
                 )
 
     def _send(self, state: AgentState, inputs: Inputs, message: str, index: int) -> Turn:
-        assert state.mcp is not None and state.ogx is not None
+        assert state.ogx is not None
         endpoint = inputs.tool_endpoint
+        if endpoint is None:
+            assert state.mcp is not None
+            tool_url = mcp_url(state.mcp.port)
+        else:
+            tool_url = endpoint.url
         body = request_body(
             model=inputs.model,
             message=message,
             instructions=inputs.instructions,
-            mcp_url=endpoint.url if endpoint is not None else mcp_url(state.mcp.port),
+            mcp_url=tool_url,
             previous_response_id=state.previous_response_id,
             allowed_tools=inputs.allowed_tools,
             authorization=endpoint.token if endpoint is not None else None,
@@ -508,7 +541,8 @@ def _parser() -> argparse.ArgumentParser:
         usage="%(prog)s --domain DOMAIN [options] MESSAGE",
         description=(
             "Run one turn of a MiDojo openshell evaluation: start or reuse the "
-            "domain's safe MCP server and OGX, send the message, print the reply."
+            "domain's safe MCP server (none behind MiDojo's host interceptor) and "
+            "OGX, send the message, print the reply."
         ),
         epilog=(
             "MESSAGE is the last argument, taken literally even when it looks "

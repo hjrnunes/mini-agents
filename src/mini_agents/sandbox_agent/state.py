@@ -54,10 +54,13 @@ class AgentState:
     """``turns`` holds the runs accepted as turns, in order; ``rejected`` the
     runs refused before they became one (a bad turn variable, a turn out of
     order), which never shift the next turn's expected index. ``turn_count``
-    is ``None`` only in a summary of a rejected run whose count is unreadable."""
+    is ``None`` only in a summary of a rejected run whose count is unreadable.
+    ``interceptor`` is true when the first turn called the tools through
+    MiDojo's host interceptor and so started OGX alone, no ``mcp``."""
 
     domain: str
     turn_count: int | None
+    interceptor: bool = False
     mcp: Process | None = None
     ogx: Process | None = None
     previous_response_id: str | None = None
@@ -74,6 +77,7 @@ class AgentState:
         return cls(
             domain=data["domain"],
             turn_count=data["turn_count"],
+            interceptor=data.get("interceptor", False),
             mcp=Process(**data["mcp"]) if data.get("mcp") else None,
             ogx=Process(**data["ogx"]) if data.get("ogx") else None,
             previous_response_id=data.get("previous_response_id"),

@@ -5,9 +5,10 @@ fake Responses server stands in for it (``sandbox_fakes/fake_ogx.py``),
 started through a fake ``python-ogx``. In the two-turn test the MCP server is
 the real ``mini_agents`` server, started through a ``python-mcp`` that runs
 this venv's interpreter. The failure tests use a fake MCP server
-(``fake_mcp.py``) that only listens. The interceptor test serves a fake of
+(``fake_mcp.py``) that only listens. The interceptor tests serve a fake of
 MiDojo's host interceptor in this process: streamable HTTP at ``/mcp``, 401
-without its bearer token. No model calls, no network beyond loopback.
+without its bearer token, and give a ``python-mcp`` that notes each launch.
+No model calls, no network beyond loopback.
 """
 
 from __future__ import annotations
@@ -33,12 +34,14 @@ INSTRUCTIONS = "You are Klarna's support agent."
 RELAY_URL = "http://host.openshell.internal:18006/v1"
 
 
-def _wrapper(path: Path, *program: str) -> Path:
-    """A fake interpreter: runs this venv's python on ``program`` plus the args."""
+def _wrapper(path: Path, *program: str, launches: Path | None = None) -> Path:
+    """A fake interpreter: runs this venv's python on ``program`` plus the args,
+    first appending a line to ``launches`` when given."""
 
     quoted = " ".join(f'"{part}"' for part in (sys.executable, *program))
+    note = f'echo launched >> "{launches}"\n' if launches is not None else ""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f'#!/bin/sh\nexec {quoted} "$@"\n')
+    path.write_text(f'#!/bin/sh\n{note}exec {quoted} "$@"\n')
     path.chmod(0o755)
     return path
 
@@ -48,11 +51,17 @@ def sandbox(tmp_path):
     """State dir, workdir and fake interpreters; kills what the turns started."""
 
     paths = {
+        "mcp_launches": tmp_path / "mcp-launches.txt",
         "state": tmp_path / "agent-state",
         "workdir": tmp_path / "workdir",
         "record": tmp_path / "ogx-requests.jsonl",
         "real_mcp": _wrapper(tmp_path / "real" / "python-mcp"),
         "fake_mcp": _wrapper(tmp_path / "fake" / "python-mcp", str(FAKES / "fake_mcp.py")),
+        "noting_mcp": _wrapper(
+            tmp_path / "noting" / "python-mcp",
+            str(FAKES / "fake_mcp.py"),
+            launches=tmp_path / "mcp-launches.txt",
+        ),
         "ogx": _wrapper(tmp_path / "fake" / "python-ogx", str(FAKES / "fake_ogx.py")),
     }
     paths["workdir"].mkdir()
@@ -168,6 +177,7 @@ def test_two_turns_start_once_continue_the_response_and_leave_evidence(sandbox):
     assert first.returncode == 0, first.stderr
     assert first.stdout == "reply 1\n"
     started = _state(sandbox)
+    assert started["interceptor"] is False
     assert _running(started["mcp"]["pid"]) and _running(started["ogx"]["pid"])
     for name in ("mcp", "ogx"):
         assert started[name]["identity"].startswith(("proc-start:", "ps-lstart:"))
@@ -235,8 +245,11 @@ def test_two_turns_start_once_continue_the_response_and_leave_evidence(sandbox):
 
 @pytest.mark.parametrize(("victim", "reason"), [("ogx", "ogx-gone"), ("mcp", "mcp-server-gone")])
 def test_a_process_that_dies_between_turns_fails_the_next_turn(sandbox, victim, reason):
-    first = _turn(sandbox, "hi", _environment(sandbox["record"], index=0, count=2))
+    first = _turn(
+        sandbox, "hi", _environment(sandbox["record"], index=0, count=2), mcp="noting_mcp"
+    )
     assert first.returncode == 0, first.stderr
+    assert sandbox["mcp_launches"].read_text() == "launched\n"
     started = _state(sandbox)
     os.killpg(started[victim]["pid"], signal.SIGKILL)
     _wait_gone(started[victim]["pid"])
@@ -413,7 +426,7 @@ def test_behind_the_interceptor_the_tools_are_called_there_with_its_token(sandbo
         MIDOJO_TOOL_TOKEN=INTERCEPTOR_TOKEN,
     )
 
-    result = _turn(sandbox, "Where is my order?", env)
+    result = _turn(sandbox, "Where is my order?", env, mcp="noting_mcp")
 
     assert result.returncode == 0, result.stderr
     assert result.stdout == "reply 1\n"
@@ -439,9 +452,55 @@ def test_behind_the_interceptor_the_tools_are_called_there_with_its_token(sandbo
         f"Bearer {INTERCEPTOR_TOKEN}"
     }
 
-    # The domain's server in the sandbox listened but was never called.
-    assert _state(sandbox)["mcp"]["port"] not in (None, interceptor.port)
-    assert not direct.exists() or direct.read_text() == ""
+    # The domain's server in the sandbox never started, so was never called.
+    assert not sandbox["mcp_launches"].exists()
+    assert _state(sandbox)["mcp"] is None
+    assert not direct.exists()
 
     assert INTERCEPTOR_TOKEN not in result.stdout + result.stderr
     assert INTERCEPTOR_TOKEN not in _files_text(sandbox["state"], sandbox["workdir"])
+
+
+def test_behind_the_interceptor_no_mcp_server_starts_and_a_later_turn_needs_none(
+    sandbox, interceptor
+):
+    """The first turn starts OGX alone and gives it no connector; the second
+    checks OGX alone and succeeds with no MCP server running in the sandbox."""
+
+    env = dict(
+        FAKE_OGX_CALL_TOOL="1",
+        MIDOJO_TOOL_URL=interceptor.url,
+        MIDOJO_TOOL_TOKEN=INTERCEPTOR_TOKEN,
+    )
+    first = _turn(
+        sandbox,
+        "Where is my order?",
+        _environment(sandbox["record"], index=0, count=2, **env),
+        mcp="noting_mcp",
+    )
+    assert first.returncode == 0, first.stderr
+    assert first.stdout == "reply 1\n"
+    started = _state(sandbox)
+    assert started["interceptor"] is True
+    assert started["mcp"] is None
+    assert _running(started["ogx"]["pid"])
+    assert not (sandbox["state"] / "mcp-server.log").exists()
+    config = json.loads((sandbox["state"] / "ogx-config.yaml").read_text())
+    assert config["connectors"] == []
+
+    second = _turn(
+        sandbox,
+        "Refund it, please",
+        _environment(sandbox["record"], index=1, count=2, **env),
+        mcp="noting_mcp",
+    )
+    assert second.returncode == 0, second.stderr
+    assert second.stdout == "reply 2\n"
+
+    assert not sandbox["mcp_launches"].exists()
+    state = _state(sandbox)
+    assert (state["mcp"], state["ogx"]) == (None, started["ogx"])
+    assert [request["tool_result"] for request in _lines(sandbox["record"])] == [
+        "intercepted ORD-101"
+    ] * 2
+    assert _summary(sandbox)["exit_reasons"] == ["ok", "ok"]

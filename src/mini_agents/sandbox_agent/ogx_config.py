@@ -13,7 +13,9 @@ value through its environment). Changed for the sandbox:
   loads onnxruntime, whose telemetry the sandbox blocks, and stage 3 processes
   no files, so the expected-blocked egress list stays empty;
 - every store sits under the state directory, never in the workdir;
-- inference points at the model relay's sandbox URL.
+- inference points at the model relay's sandbox URL;
+- behind MiDojo's host interceptor there is no server in the sandbox, so no
+  connector: each request names the interceptor as its tool's ``server_url``.
 
 The file is written as JSON, which OGX's YAML loader reads unchanged.
 """
@@ -55,17 +57,21 @@ def mcp_url(port: int) -> str:
 def render_ogx_config(
     *,
     domain: str,
-    mcp_port: int,
+    mcp_port: int | None,
     ogx_port: int,
     model: str,
     model_base_url: str,
     state_dir: Path,
 ) -> dict[str, Any]:
-    """The OGX config for one domain's safe server, as a mapping."""
+    """The OGX config for one domain's safe server, as a mapping; with
+    ``mcp_port`` None, for no server in the sandbox."""
 
     if domain not in DOMAINS:
         raise ValueError(f"unknown domain: {domain!r}")
-    for label, port in (("MCP port", mcp_port), ("OGX port", ogx_port)):
+    ports = (("OGX port", ogx_port),)
+    if mcp_port is not None:
+        ports = (("MCP port", mcp_port), *ports)
+    for label, port in ports:
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError(f"{label} must be an integer between 1 and 65535")
     if mcp_port == ogx_port:
@@ -197,7 +203,11 @@ def render_ogx_config(
             "vector_dbs": [],
         },
         "server": {"port": ogx_port, "host": LOOPBACK_HOST},
-        "connectors": [{"connector_id": connector_id(domain), "url": mcp_url(mcp_port)}],
+        "connectors": (
+            []
+            if mcp_port is None
+            else [{"connector_id": connector_id(domain), "url": mcp_url(mcp_port)}]
+        ),
     }
 
 

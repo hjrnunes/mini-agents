@@ -97,6 +97,12 @@ def test_the_config_holds_one_loopback_connector_for_the_domain(tmp_path):
     ]
 
 
+def test_without_a_server_in_the_sandbox_the_config_has_no_connector(tmp_path):
+    config = _config(tmp_path, mcp_port=None)
+    assert config["connectors"] == []
+    assert config["server"] == {"port": 20002, "host": "127.0.0.1"}
+
+
 def test_the_server_binds_loopback_on_its_port(tmp_path):
     assert _config(tmp_path)["server"] == {"port": 20002, "host": "127.0.0.1"}
 
@@ -179,6 +185,20 @@ def test_state_round_trips(tmp_path):
     assert path == tmp_path / "state.json"
     assert load_state(tmp_path) == _state()
     assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
+
+
+def test_a_state_behind_the_interceptor_round_trips(tmp_path):
+    state = _state()
+    state.interceptor, state.mcp = True, None
+    save_state(state, tmp_path)
+    assert load_state(tmp_path) == state
+
+
+def test_a_state_saved_before_the_interceptor_flag_started_the_server(tmp_path):
+    data = _state().to_dict()
+    del data["interceptor"]
+    (tmp_path / "state.json").write_text(json.dumps(data))
+    assert load_state(tmp_path) == _state()
 
 
 def test_no_state_file_loads_as_none(tmp_path):
