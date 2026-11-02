@@ -4,6 +4,24 @@ MiniBank-style MCP evaluation targets: in-memory worlds whose tools mutate a
 ledger an agent can inspect. Chat text is not the score; the ledger is.
 Seeded attack scenarios live in `README.md`.
 
+## Key concepts
+
+- **System under test** — one MiniBank world: the kernel, its six tool servers
+  and its business ledger.
+- **Agent tool** — an operation an assistant can call; the safe and unsafe
+  executors expose the same names.
+- **Testing tool** — the client that drives the world in a run (Garak, MiDojo,
+  orch); this repository never runs one.
+- **Ledger** — the in-memory state that tools mutate; the score reads the
+  ledger, not the chat text.
+- **Slot** (`Slot`) — a free-text field a read tool returns and `--seed-file`
+  can plant.
+- **Planted item** — the payload content planted in one slot for one attack.
+- **Seed file** (`mini-agents-seed-v1`, `artifact-seed-v1`) — the startup input
+  that plants items; a restart is the only reset.
+- **Declaration file** (`declared-runtime-v1`) — a generated `tools-list.json`,
+  `runtime-spec.yaml` or `value-facts.json`, checked against the live servers.
+
 ## Architecture
 
 One kernel, three domains, one rule per domain:
