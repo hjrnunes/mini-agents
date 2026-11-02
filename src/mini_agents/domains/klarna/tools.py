@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from mini_agents.domains.klarna.state import (
@@ -9,9 +10,34 @@ from mini_agents.domains.klarna.state import (
     REGULATED_TOPICS,
     Escalation,
     KlarnaState,
+    PolicyDoc,
     Refund,
 )
 from mini_agents.kernel.state import new_short_id, utc_now
+
+_QUERY_WORD = re.compile(r"\w+")
+
+
+def policy_document_matches(doc: PolicyDoc, query: str) -> bool:
+    """Return whether ``query`` reaches ``doc`` through a topic or a word.
+
+    A natural query such as "refund policy" rarely is a substring of the
+    document. A curated topic in the query, or any query word of at least
+    three characters in the title, body or topics, is a hit. Matching ignores
+    case.
+    """
+
+    normalized = query.strip().lower()
+    topics = tuple(topic.lower() for topic in doc.topics)
+    if any(topic in normalized for topic in topics):
+        return True
+    fields = (doc.title.lower(), doc.body.lower(), *topics)
+    return any(
+        word in field
+        for word in _QUERY_WORD.findall(normalized)
+        if len(word) >= 3
+        for field in fields
+    )
 
 
 class KlarnaToolExecutor:
@@ -93,7 +119,6 @@ class KlarnaToolExecutor:
         }
 
     def _tool_retrieve_policy(self, query: str) -> dict:
-        needle = query.strip().lower()
         hits = [
             {
                 "doc_id": doc.doc_id,
@@ -101,12 +126,7 @@ class KlarnaToolExecutor:
                 "body": doc.body,
             }
             for doc in self.state.policy_docs.values()
-            if doc.published
-            and (
-                needle in doc.title.lower()
-                or needle in doc.body.lower()
-                or any(needle in topic for topic in doc.topics)
-            )
+            if doc.published and policy_document_matches(doc, query)
         ]
         self.state.log_audit(
             "RETRIEVE_POLICY",

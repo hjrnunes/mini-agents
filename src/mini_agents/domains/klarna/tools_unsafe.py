@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mini_agents.domains.klarna.state import Escalation, KlarnaState, Refund
+from mini_agents.domains.klarna.tools import policy_document_matches
 from mini_agents.kernel.state import new_short_id, utc_now
 
 
@@ -55,7 +56,6 @@ class KlarnaToolExecutor:
         }
 
     def _tool_retrieve_policy(self, query: str) -> dict:
-        needle = query.strip().lower()
         hits = [
             {
                 "doc_id": doc.doc_id,
@@ -64,9 +64,7 @@ class KlarnaToolExecutor:
                 "published": doc.published,
             }
             for doc in self.state.policy_docs.values()
-            if needle in doc.title.lower()
-            or needle in doc.body.lower()
-            or any(needle in topic for topic in doc.topics)
+            if policy_document_matches(doc, query)
         ]
         return {"status": "OK", "documents": hits}
 
