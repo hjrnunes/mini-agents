@@ -9,7 +9,9 @@
       "carrier_operation": "get_listing",
       "record_key": "listing_id",
       "field": "title",
-      "controller": "counterparty",
+      "writable_by": [
+        "counterparty"
+      ],
       "content_kind": "listing_content",
       "max_chars": 2000,
       "records": [
@@ -23,7 +25,9 @@
       "carrier_operation": "lookup_policy",
       "record_key": "doc_id",
       "field": "documents[].body",
-      "controller": "operator_insider",
+      "writable_by": [
+        "operator_insider"
+      ],
       "content_kind": "policy_document",
       "max_chars": 2000,
       "records": [

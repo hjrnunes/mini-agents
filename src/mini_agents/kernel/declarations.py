@@ -4,8 +4,8 @@ A consumer describes a target by two files, as it describes a declared one:
 ``tools-list.json``, the MCP ``tools/list`` result of the target's server, and
 ``runtime-spec.yaml`` (``declared-runtime-v1``), what that list does not state.
 The spec names each seed slot, with its carrier tool, record key, field,
-controller, content kind, ``max_chars`` and records, and classifies every
-listed tool as ``read_only`` or ``mutating`` from the domain's
+``writable_by`` parties, content kind, ``max_chars`` and records, and classifies
+every listed tool as ``read_only`` or ``mutating`` from the domain's
 ``TOOL_ACCESS``, since no tool carries MCP annotations. Beside them,
 ``value-facts.json`` holds the domain's ``VALUE_FACTS``
 (:mod:`mini_agents.kernel.value_facts`), the record kind or date format of
@@ -91,7 +91,7 @@ def runtime_spec(domain: str, variant: str) -> dict[str, Any]:
                 "carrier_operation": slot.carrier_operation,
                 "record_key": slot.record_key,
                 "field": slot.field,
-                "controller": slot.controller,
+                "writable_by": list(slot.writable_by),
                 "content_kind": slot.content_kind,
                 "max_chars": slot.max_chars,
                 "records": list(slot.accepted(unsafe)),

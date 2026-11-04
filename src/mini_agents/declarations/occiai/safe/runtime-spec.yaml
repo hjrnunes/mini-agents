@@ -9,7 +9,9 @@
       "carrier_operation": "get_referral",
       "record_key": "referral_id",
       "field": "reason",
-      "controller": "third_party",
+      "writable_by": [
+        "third_party"
+      ],
       "content_kind": "clinical_note",
       "max_chars": 2000,
       "records": [
@@ -21,7 +23,9 @@
       "carrier_operation": "get_education",
       "record_key": "template_id",
       "field": "script",
-      "controller": "operator_insider",
+      "writable_by": [
+        "operator_insider"
+      ],
       "content_kind": "education_material",
       "max_chars": 2000,
       "records": [

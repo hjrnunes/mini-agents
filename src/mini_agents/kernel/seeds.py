@@ -87,7 +87,9 @@ class Slot:
     ``records`` and ``unsafe_records`` list the record ids the hook accepts in
     safe and unsafe mode. They differ where the two executors expose different
     records: a seed on a record the carrier never returns would reach no agent.
-    ``max_chars`` bounds one item's content; each variant's
+    ``writable_by`` lists the parties that can write the field, in the
+    scenario-handoff's ``ItemController`` terms; the declaration states it as a
+    list. ``max_chars`` bounds one item's content; each variant's
     ``runtime-spec.yaml`` states it.
     """
 
@@ -96,7 +98,7 @@ class Slot:
     record_key: str
     other_readers: tuple[str, ...]
     field: str
-    controller: str
+    writable_by: tuple[str, ...]
     content_kind: str
     records: tuple[str, ...]
     unsafe_records: tuple[str, ...]

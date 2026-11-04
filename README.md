@@ -552,7 +552,8 @@ target of its own):
   `outputSchema`). The state summary is hidden by default, so it is not listed.
 - `runtime-spec.yaml` (`declared-runtime-v1`): what the tools list does not
   state. `seed_slots` lists each slot's `id`, `carrier_operation`, `field`,
-  `controller`, `content_kind`, `max_chars` (the content limit `--seed-file`
+  `writable_by` (the parties that can write it, as a list), `content_kind`,
+  `max_chars` (the content limit `--seed-file`
   enforces for that slot) and `records` (the records that variant accepts).
   `operations` classifies every listed tool as `read_only` or `mutating` from
   `TOOL_ACCESS`, since no tool carries MCP annotations. The spec is JSON under

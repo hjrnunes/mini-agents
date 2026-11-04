@@ -38,7 +38,7 @@ PACKAGE = Path(mcp_server.__file__).resolve().parent.parent
 # a seed slot's keys and the ones it requires, and the operation classes.
 SPEC_KEYS = {"schema_version", "delivery", "limits", "seed_slots", "operations"}
 SLOT_KEYS = {
-    "id", "carrier_operation", "record_key", "field", "controller", "content_kind",
+    "id", "carrier_operation", "record_key", "field", "writable_by", "content_kind",
     "max_chars", "mode", "records",
 }
 SLOT_REQUIRED = SLOT_KEYS - {"mode", "records"}
@@ -162,10 +162,12 @@ def test_the_runtime_spec_is_a_declared_runtime_spec(domain, variant):
             "carrier_operation",
             "record_key",
             "field",
-            "controller",
             "content_kind",
         ):
             assert isinstance(slot[key], str) and slot[key].strip()
+        writable_by = slot["writable_by"]
+        assert isinstance(writable_by, list) and writable_by
+        assert all(isinstance(party, str) and party.strip() for party in writable_by)
         assert slot["carrier_operation"] in tools
         assert type(slot["max_chars"]) is int and slot["max_chars"] >= 1
         assert slot["records"] and len(slot["records"]) == len(set(slot["records"]))
@@ -194,6 +196,7 @@ def test_the_slots_are_the_domain_slots_with_this_variants_records(domain, varia
         assert declared["carrier_operation"] == slot.carrier_operation
         assert declared["record_key"] == slot.record_key
         assert declared["field"] == slot.field
+        assert declared["writable_by"] == list(slot.writable_by)
         assert declared["records"] == list(slot.accepted(variant == "unsafe"))
 
 
@@ -308,20 +311,21 @@ def _artifact_generator_contract_files():
     if not location:
         pytest.skip("ARTIFACT_GENERATOR_RUNTIME_CONTRACT is not set")
     contract = Path(location)
-    schema = contract / "artifact-runtime-contract-v2.schema.json"
+    schema = contract / "artifact-runtime-contract-v3" / "schema.json"
     fixture = (
         contract
-        / "artifact-runtime-contract-v2"
+        / "artifact-runtime-contract-v3"
+        / "cases"
         / "valid"
         / "slot-with-record-key.json"
     )
     if not schema.is_file() or not fixture.is_file():
-        pytest.skip("artifact-generator runtime-contract v2 files are absent")
+        pytest.skip("artifact generator runtime-contract v3 files are absent")
     return schema, fixture
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
-def test_each_runtime_spec_slot_validates_against_runtime_contract_v2(domain, variant):
+def test_each_runtime_spec_slot_validates_against_runtime_contract_v3(domain, variant):
     jsonschema = pytest.importorskip("jsonschema")
     schema_path, fixture_path = _artifact_generator_contract_files()
     schema = json.loads(schema_path.read_text())
