@@ -83,13 +83,16 @@ does not see it:
 Without Docker:
 
 ```bash
-uv sync --extra gateway
-uv run mini-agents-stack
+uv sync --frozen --extra gateway
+.venv/bin/python scripts/patch_ogx_streaming.py
+uv run --frozen mini-agents-stack
 ```
 
 The `gateway` extra installs OGX from `uv.lock` (Python 3.12 or newer). A bare
-`uv sync` removes it. `mini-agents-stack --mcp-only` starts the six SSE servers
-and skips OGX.
+`uv sync` removes it. `scripts/patch_ogx_streaming.py` patches the installed
+OGX's streaming tool-call merge for vLLM Hermes-style deltas; the sandbox image
+applies it too (see [Sandbox image](#sandbox-image)). `mini-agents-stack --mcp-only` starts the six
+SSE servers and skips OGX.
 
 ## Sandbox image
 
@@ -396,9 +399,13 @@ The tests use the flags to run the command offline, with fakes.
 Requires Python 3.11 or newer, matching the Asago pipeline repositories.
 
 ```bash
-uv sync
-uv run pytest
+uv run --frozen pytest
 ```
+
+A plain `uv sync` removes OGX, which orch's live runs need, so run the tests
+with `--frozen`. To restore OGX, run `uv sync --frozen --extra gateway` and
+`.venv/bin/python scripts/patch_ogx_streaming.py`, as in "Without Docker"
+above.
 
 ### MiniKlarna
 
@@ -503,7 +510,7 @@ The file is in one of two formats, told apart by `schema_version`:
 
 ### Seed slots
 
-| Slot | Carrier tool | Field | Controller | Content kind |
+| Slot | Carrier tool | Field | Writable by | Content kind |
 | --- | --- | --- | --- | --- |
 | `klarna.order.item` | `lookup_order` | `item` | `third_party` | `order_content` |
 | `klarna.policy_doc.body` | `retrieve_policy` | `documents[].body` | `operator_insider` | `policy_document` |
