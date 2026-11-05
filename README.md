@@ -200,7 +200,7 @@ model call.
 |---|---|---|
 | `python:3.14.8-slim-bookworm` | `Dockerfile.sandbox`, manifest-list digest | `docker buildx imagetools inspect python:<tag>`; replace tag, version and digest |
 | `ghcr.io/astral-sh/uv:0.10.4` | `Dockerfile.sandbox`, manifest-list digest | the same, for `ghcr.io/astral-sh/uv:<version>` |
-| Python packages, `ogx[starter]==1.3.1`, `ogx-api==1.4.0` | `uv.lock`; OGX in the `gateway` extra of `pyproject.toml` | edit `pyproject.toml`, `uv lock`, then check the patch script still applies every replacement to a fresh `uv sync --extra gateway` |
+| Python packages, `ogx[starter]==1.3.1`, `ogx-api==1.4.0` | `uv.lock`; OGX in the `gateway` extra of `pyproject.toml` | edit `pyproject.toml`, `uv lock`, then check the patch script still applies every replacement to a fresh `uv sync --frozen --extra gateway` |
 | Resolution cutoff | `exclude-newer` in `pyproject.toml` `[tool.uv]` | move the date forward, `uv lock` |
 | `cl100k_base` | the hash tiktoken ships with | bump tiktoken in `uv.lock` |
 

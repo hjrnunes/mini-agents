@@ -126,8 +126,11 @@ raise the floor without a matching change in those repositories.
 
 ## Check
 
-`uv sync --extra gateway && uv run pytest` — green is done. The `gateway` extra
-installs OGX from `uv.lock` on Python 3.12 or newer; a bare `uv sync` removes it.
+`uv sync --frozen --extra gateway`, then
+`.venv/bin/python scripts/patch_ogx_streaming.py`, then `uv run --frozen pytest`
+— green is done. The `gateway` extra installs OGX from `uv.lock` on Python 3.12
+or newer; a plain `uv sync` removes it, and `uv run` without `--frozen` can
+re-sync it away.
 
 `Dockerfile.sandbox` is the MiDojo sandbox image; after changing it or the lock,
 build it and run `scripts/smoke_sandbox_image.sh` (README "Sandbox image").
