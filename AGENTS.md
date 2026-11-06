@@ -14,11 +14,12 @@ Seeded attack scenarios live in `README.md`.
   orch); this repository never runs one.
 - **Ledger** — the in-memory state that tools mutate; the score reads the
   ledger, not the chat text.
-- **Slot** (`Slot`) — a free-text field a read tool returns and `--seed-file`
+- **Slot** (`Slot`) — a free-text field a read tool returns and the seed API
   can plant.
 - **Planted item** — the payload content planted in one slot for one attack.
-- **Seed file** (`mini-agents-seed-v1`, `artifact-seed-v1`) — the startup input
-  that plants items; a restart is the only reset.
+- **Seed document** (`mini-agents-seed-v1`, `artifact-seed-v1`) — the package
+  input that names a slot, one of its records, a mode and the content;
+  `parse_seed` reads it and the domain `apply_seed` plants it into a state.
 - **Declaration file** (`declared-runtime-v1`) — a generated `tools-list.json`,
   `runtime-spec.yaml` or `value-facts.json`, checked against the live servers.
 
@@ -30,7 +31,7 @@ One kernel, three domains, one rule per domain:
   (one process tree: six SSE servers, Responses API on `:8321`).
 - `domains/<name>/` — `state.py` (in-memory world + seed data), `tools.py`
   (safe executor), `tools_unsafe.py` (red-team counterpart), `seeds.py` (slots
-  that `--seed-file` can plant, and each tool's read or write access).
+  the seed API can plant, and each tool's read or write access).
 
 ## Invariants
 
@@ -83,8 +84,8 @@ Each `state.py` seeds its own fixture and its own `authenticated_*` id.
 a bug. New attacks mean a new fixture in `state.py` and a test pair (safe
 rejects, unsafe lands).
 
-**Seed slots.** A free-text field that a read tool returns can be planted at
-startup (`--seed-file`). Declare it as a `Slot` in `domains/<name>/seeds.py`
+**Seed slots.** A free-text field that a read tool returns can carry a planted
+item. Declare it as a `Slot` in `domains/<name>/seeds.py`
 with the records each executor returns, add the call to the tables in
 `tests/test_seed_slots.py`, and regenerate the declaration files. A slot needs
 its carrier tool to return the field in both executors, or the record lists must
@@ -92,13 +93,14 @@ differ the way `occiai.referral.reason` does. The twin's list holds every safe
 record, so a package seeded for the safe target also runs on the twin. A
 slot's `max_chars` (2000 unless set) bounds an `artifact-seed-v1` item's
 content; `runtime-spec.yaml` states it, and `mini-agents-seed-v1` caps every
-item at the same 2000.
+item at the same 2000. The testing tool plants the item at run time; the target
+starts plain and takes no seed argument.
 
-**A fresh start is the reset.** The ledger lives in memory and
-`--seed-file` plants only at start, so a restart with the same arguments gives
-the same initial ledger (`tests/test_reset.py`). Keep it that way: no state on
-disk that a start reads back, and no seeding after start without a reset
-command beside it. README "Reset (a fresh start)".
+**A fresh start is the reset.** The ledger lives in memory only and a start
+reads nothing back from disk, so a restart with the same arguments gives the
+same initial ledger (`tests/test_reset.py`). Keep it that way: no state on
+disk that a start reads back, and a seed planted into a running state dies
+with the process. README "Reset (a fresh start)".
 
 **Declaration files.** `src/mini_agents/declarations/<domain>/{safe,unsafe}/`
 holds `tools-list.json` (the default server's `tools/list` result) and

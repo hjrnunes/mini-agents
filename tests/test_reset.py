@@ -1,9 +1,10 @@
-"""A fresh start is the reset: the same seed file gives the same initial ledger.
+"""A fresh start is the reset: two starts give the same initial ledger.
 
-A server keeps its ledger in memory only and plants a seed only when it starts,
-so a caller resets a target by stopping it and starting it again with the same
-arguments. The in-process tests drive ``main()`` with a builder that keeps the
-state it is given, so no port is bound. The last test restarts a real server
+A server keeps its ledger in memory only and reads nothing back from disk, so a
+caller resets a target by stopping it and starting it again with the same
+arguments. A seed the kernel API plants into a running state does not survive
+the restart. The in-process tests drive ``main()`` with a builder that keeps the
+state it creates, so no port is bound. The last test restarts a real server
 on loopback and reads its ledger over SSE. No model calls.
 """
 
@@ -21,7 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from mini_agents.kernel import mcp_server
-from mini_agents.kernel.seeds import ARTIFACT_SEED_VERSION, SEED_SCHEMA_VERSION
+from mini_agents.kernel.seeds import parse_seed
 
 DOMAINS = mcp_server.DOMAINS
 STATE_CLASS = {"klarna": "KlarnaState", "airbnb": "AirbnbState", "occiai": "OcciAIState"}
@@ -51,6 +52,10 @@ def _module(domain, name):
     return importlib.import_module(f"mini_agents.domains.{domain}.{name}")
 
 
+def _state(domain):
+    return getattr(_module(domain, "state"), STATE_CLASS[domain])()
+
+
 def _ledger(state):
     """Every record; each start draws its own session id."""
     environment = state.to_environment()
@@ -58,31 +63,15 @@ def _ledger(state):
     return environment
 
 
-def _seed_file(tmp_path, domain, version):
-    slot = _module(domain, "seeds").SLOTS[0]
-    document = {
-        "schema_version": version,
-        "carrier_operation": slot.carrier_operation,
-        "items": [
-            {
-                "slot": slot.id,
-                "record_ref": slot.records[0],
-                "mode": "replace",
-                "content": PLANTED,
-            }
-        ],
-    }
-    path = tmp_path / "seed.json"
-    path.write_text(json.dumps(document))
-    return path
-
-
 def _start(monkeypatch, domain, *args):
-    """Run ``main()`` once and return the state the server was built with."""
+    """Run ``main()`` once and return the state its builder created."""
     states = []
-    monkeypatch.setitem(
-        mcp_server.BUILDERS, domain, lambda state=None: states.append(state) or FakeServer()
-    )
+
+    def builder():
+        states.append(_state(domain))
+        return FakeServer()
+
+    monkeypatch.setitem(mcp_server.BUILDERS, domain, builder)
     mcp_server.main(["--domain", domain, "--port", "1", *args])
     (state,) = states
     return state
@@ -90,19 +79,15 @@ def _start(monkeypatch, domain, *args):
 
 @pytest.mark.parametrize("domain", DOMAINS)
 def test_the_snapshot_holds_every_state_attribute(domain):
-    state = getattr(_module(domain, "state"), STATE_CLASS[domain])()
+    state = _state(domain)
 
     assert set(vars(state)) == set(type(state).ENVIRONMENT_ATTRIBUTES)
 
 
-@pytest.mark.parametrize("version", [ARTIFACT_SEED_VERSION, SEED_SCHEMA_VERSION])
 @pytest.mark.parametrize("unsafe", [False, True], ids=["safe", "unsafe"])
 @pytest.mark.parametrize("domain", DOMAINS)
-def test_a_fresh_start_with_the_same_seed_file_gives_the_same_initial_ledger(
-    tmp_path, monkeypatch, domain, unsafe, version
-):
-    path = _seed_file(tmp_path, domain, version)
-    flags = ["--seed-file", str(path), *(["--unsafe"] if unsafe else [])]
+def test_a_fresh_start_gives_the_same_initial_ledger(monkeypatch, domain, unsafe):
+    flags = ("--unsafe",) if unsafe else ()
 
     first = _start(monkeypatch, domain, *flags)
     initial = _ledger(first)
@@ -116,7 +101,36 @@ def test_a_fresh_start_with_the_same_seed_file_gives_the_same_initial_ledger(
 
     assert second is not first
     assert _ledger(second) == initial
-    assert PLANTED in json.dumps(initial)
+
+
+@pytest.mark.parametrize("domain", DOMAINS)
+def test_a_seed_planted_after_start_does_not_survive_a_restart(monkeypatch, domain):
+    seeds = _module(domain, "seeds")
+    slot = seeds.SLOTS[0]
+    document = parse_seed(
+        json.dumps(
+            {
+                "schema_version": "mini-agents-seed-v1",
+                "carrier_operation": slot.carrier_operation,
+                "items": [
+                    {
+                        "slot": slot.id,
+                        "record_ref": slot.records[0],
+                        "mode": "replace",
+                        "content": PLANTED,
+                    }
+                ],
+            }
+        ).encode()
+    )
+    planted = seeds.new_state()
+    seeds.apply_seed(planted, document.items, carrier=document.carrier_operation)
+    assert PLANTED in json.dumps(_ledger(planted))
+
+    restarted = _start(monkeypatch, domain)
+
+    assert _ledger(restarted) == _ledger(seeds.new_state())
+    assert PLANTED not in json.dumps(_ledger(restarted))
 
 
 def _free_port():
@@ -125,7 +139,7 @@ def _free_port():
         return sock.getsockname()[1]
 
 
-def _serve(port, seed_file):
+def _serve(port):
     process = subprocess.Popen(
         [
             sys.executable,
@@ -137,8 +151,6 @@ def _serve(port, seed_file):
             "127.0.0.1",
             "--port",
             str(port),
-            "--seed-file",
-            str(seed_file),
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -172,13 +184,12 @@ def _summary_without_session(summary):
     return {key: value for key, value in summary.items() if key != "session_id"}
 
 
-def test_restarting_a_real_server_resets_its_ledger(tmp_path):
-    seed_file = _seed_file(tmp_path, "klarna", ARTIFACT_SEED_VERSION)
+def test_restarting_a_real_server_resets_its_ledger():
     summary = ("get_klarna_state_summary", {})
     tool, arguments = WRITES["klarna"]
 
     port = _free_port()
-    process = _serve(port, seed_file)
+    process = _serve(port)
     try:
         before, written, after = asyncio.run(
             _calls(f"http://127.0.0.1:{port}/sse", [summary, (tool, arguments), summary])
@@ -190,17 +201,11 @@ def test_restarting_a_real_server_resets_its_ledger(tmp_path):
     assert after["escalations"] and not before["escalations"]
 
     port = _free_port()
-    process = _serve(port, seed_file)
+    process = _serve(port)
     try:
-        restarted, order = asyncio.run(
-            _calls(
-                f"http://127.0.0.1:{port}/sse",
-                [summary, ("lookup_order", {"order_id": "ORD-101"})],
-            )
-        )
+        (restarted,) = asyncio.run(_calls(f"http://127.0.0.1:{port}/sse", [summary]))
     finally:
         process.terminate()
         process.wait(timeout=10)
 
     assert _summary_without_session(restarted) == _summary_without_session(before)
-    assert order["item"] == PLANTED

@@ -440,16 +440,22 @@ uv run python -m mini_agents --domain airbnb --port 8890
 uv run python -m mini_agents --domain occiai --unsafe --port 8893
 ```
 
-## Seed a record (`--seed-file`)
+## Seed documents
 
-`--seed-file PATH` plants consumer-authored text into one named record before
-the server starts, so an indirect attack reaches the agent only through a real
-tool result. A seed changes state only. No tool changes, and the flag works in
-safe and unsafe mode.
+The target starts plain and takes no seed argument. A package's payload
+reaches the agent only through the testing tool that runs the item: MiDojo's
+host interceptor places each item in its carrier's tool result, on the MiDojo
+and the Garak route. The target declares where a payload may go: each domain's
+`Slot` table, and the seed documents that name a slot, one of its records, a
+mode and the content.
 
-```bash
-uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
-```
+`parse_seed` in `kernel/seeds.py` reads a seed document, and `apply_items`
+(through each domain's `seeds.apply_seed`) plants the items into a state. The
+kernel tests and the declaration check use that API to prove each slot's
+carrier returns the planted text. A seed changes state only: it adds or
+changes no tool, so the safe and unsafe executors stay in lockstep.
+
+The document is in one of two formats, told apart by `schema_version`:
 
 ```json
 {
@@ -466,15 +472,11 @@ uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
 }
 ```
 
-The file is in one of two formats, told apart by `schema_version`:
-
 - `mini-agents-seed-v1` (above).
 - `artifact-seed-v1`, the `seed.json` of an artifact package. It has the same
   keys, but `carrier_operation` is required, the file has no item cap, and
   each item's `content` holds at most its slot's `max_chars` characters, as
-  the domain's `runtime-spec.yaml` states (section "Declaration files"). It
-  writes no `<seed-file>.applied.json`.
-
+  the domain's `runtime-spec.yaml` states (section "Declaration files").
 - `mode` is `replace` or `append`. `append` adds one space and the content
   after the current text.
 - A `mini-agents-seed-v1` file holds 1 to 4 items; each `content` holds 1 to
@@ -484,29 +486,18 @@ The file is in one of two formats, told apart by `schema_version`:
 - `record_ref` must be a record the slot's carrier returns in the current
   mode. The safe and unsafe executors return different records, so each
   variant's `runtime-spec.yaml` lists its own `records`.
-- For a `mini-agents-seed-v1` file, after the text is planted and before the
-  server starts, the process writes
-  `<seed-file>.applied.json` (`src/mini_agents/seed-applied.schema.json`):
-  `schema_version`, `domain`, `mode`, `sha256` of the seed file's bytes, and
-  `slots` (the slot id of each item, in file order).
-  This file is the only report of the seed. The state-summary tool returns the
-  planted text for some slots, so no tool reports seeds.
-- A refused seed exits with code 3 and writes one line to stderr:
-  `mini-agents seed-error reason=<reason> detail=<text>`. The line never
-  repeats the planted text. Nothing is written and no server starts.
+- A refused document raises `SeedError`, whose `stderr_line()` writes one
+  line: `mini-agents seed-error reason=<reason> detail=<text>`. The line never
+  repeats the planted text, and a refused document changes no record.
 
 | Reason | Meaning |
 | --- | --- |
-| `seed_file_unreadable` | The file does not exist or cannot be read. |
 | `schema_mismatch` | Not valid JSON, or keys, types, `schema_version`, `mode` or `record_ref` format are wrong, or `items` is empty. |
 | `too_many_items` | More than 4 items (`mini-agents-seed-v1`). |
 | `content_too_long` | An item's content exceeds 2000 characters, or its slot's `max_chars`. |
-| `unknown_slot` | The slot does not exist for `--domain`. |
+| `unknown_slot` | The slot does not exist for the domain. |
 | `unknown_record` | The record is not one the slot's carrier returns in the current mode. |
 | `carrier_mismatch` | `carrier_operation` differs from the slot's carrier. |
-| `applied_write_failed` | The process could not write `<seed-file>.applied.json`. |
-
-`mini-agents-stack` starts its servers without seed flags.
 
 ### Seed slots
 
@@ -525,26 +516,25 @@ documents that Airbnb did not author, and no read tool returns a message.
 ## Reset (a fresh start)
 
 A fresh start is the reset; there is no reset command. A server keeps its
-ledger in memory only, plants `--seed-file` only while it starts, and reads
-nothing back from disk, so stopping it and starting it again with the same
-arguments gives the same initial ledger as the first start: the domain's
-default fixture, plus the same seed when the same seed file is passed. Only
-`session_id` is new on each start. A `mini-agents-seed-v1` start rewrites
-`<seed-file>.applied.json`.
+ledger in memory only and reads nothing back from disk, so stopping it and
+starting it again with the same arguments gives the same initial ledger as the
+first start: the domain's default fixture. A seed the kernel API plants into a
+running state does not survive the restart. Only `session_id` is new on each
+start.
 
 A caller that needs a known starting state, for example before each test
 package, starts one server per package:
 
 ```bash
-uv run python -m mini_agents --domain klarna --port 8888 --seed-file seed.json
+uv run python -m mini_agents --domain klarna --port 8888
 # ... run the package, then stop the process and start it again
 ```
 
 There is no health command either: the server serves once its port accepts a
 connection. `mini-agents-stack` resets the same way, by a restart of the
-whole stack. `tests/test_reset.py` checks that two starts with the same seed
-file give the same ledger, in every domain and both variants, and restarts a
-real server on loopback.
+whole stack. `tests/test_reset.py` checks that two starts give the same
+ledger, in every domain and both variants, and restarts a real server on
+loopback.
 
 ## Declaration files
 
@@ -560,7 +550,7 @@ target of its own):
 - `runtime-spec.yaml` (`declared-runtime-v1`): what the tools list does not
   state. `seed_slots` lists each slot's `id`, `carrier_operation`, `field`,
   `writable_by` (the parties that can write it, as a list), `content_kind`,
-  `max_chars` (the content limit `--seed-file`
+  `max_chars` (the content limit the seed API
   enforces for that slot) and `records` (the records that variant accepts).
   `operations` classifies every listed tool as `read_only` or `mutating` from
   `TOOL_ACCESS`, since no tool carries MCP annotations. The spec is JSON under
@@ -587,6 +577,6 @@ uv run python scripts/gen_declarations.py --check  # fail if stale
 `tests/test_declarations.py` starts each variant's server in-process, lists its
 tools over an in-memory MCP session and fails while `tools-list.json` differs,
 while any file differs from the generated one, or while a slot's
-`max_chars` is not the limit the seed hook enforces. `tests/test_value_facts.py`
+`max_chars` is not the limit the seed API enforces. `tests/test_value_facts.py`
 fails while a value fact names a tool argument the variant does not list or a
 ledger path its state does not have.

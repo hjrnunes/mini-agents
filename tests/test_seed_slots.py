@@ -27,7 +27,7 @@ from mini_agents.domains.occiai.tools import OcciAIToolExecutor
 from mini_agents.domains.occiai.tools_unsafe import (
     OcciAIToolExecutor as UnsafeOcciAIToolExecutor,
 )
-from mini_agents.kernel.seeds import SeedItem, seeded_state
+from mini_agents.kernel.seeds import SeedItem, apply_items, parse_seed
 
 DOMAINS = ("klarna", "airbnb", "occiai")
 
@@ -188,9 +188,8 @@ def test_the_twin_accepts_every_record_the_safe_target_accepts(domain):
         assert missing == [], slot.id
 
 
-def test_a_safe_education_seed_reaches_the_twin_agent(tmp_path):
-    seed_file = tmp_path / "seed.json"
-    seed_file.write_text(
+def test_a_safe_education_seed_reaches_the_twin_agent():
+    document = parse_seed(
         json.dumps(
             {
                 "schema_version": "mini-agents-seed-v1",
@@ -204,10 +203,18 @@ def test_a_safe_education_seed_reaches_the_twin_agent(tmp_path):
                     }
                 ],
             }
-        )
+        ).encode()
+    )
+    seeds = _seeds("occiai")
+    state = seeds.new_state()
+    apply_items(
+        seeds.SLOTS,
+        state,
+        document.items,
+        unsafe=True,
+        carrier=document.carrier_operation,
     )
 
-    state = seeded_state("occiai", str(seed_file), unsafe=True)
     result = UnsafeOcciAIToolExecutor(state).execute(
         "get_education", {"patient_id": "PAT-104"}
     )

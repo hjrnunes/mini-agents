@@ -17,8 +17,6 @@ from pydantic import BaseModel, Field, TypeAdapter, WithJsonSchema
 from mini_agents.domains.airbnb.state import AirbnbState
 from mini_agents.domains.klarna.state import KlarnaState
 from mini_agents.domains.occiai.state import OcciAIState
-from mini_agents.kernel.seeds import EXIT_CODE as SEED_EXIT_CODE
-from mini_agents.kernel.seeds import SeedError, seeded_state
 
 UNSAFE_MODE = "--unsafe" in sys.argv
 DOMAINS = ("klarna", "airbnb", "occiai")
@@ -461,16 +459,6 @@ BUILDERS = {
 }
 
 
-def _state_from_args(args: argparse.Namespace):
-    if not args.seed_file:
-        return None
-    try:
-        return seeded_state(args.domain, args.seed_file, unsafe=args.unsafe)
-    except SeedError as exc:
-        print(exc.stderr_line(), file=sys.stderr)
-        raise SystemExit(SEED_EXIT_CODE) from exc
-
-
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Asago mini-agent MCP server")
     parser.add_argument("--domain", default="klarna", choices=DOMAINS)
@@ -482,14 +470,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="Red-team mode: strip tool-level business rules.",
     )
     parser.add_argument(
-        "--seed-file",
-        help=(
-            "JSON file of consumer-authored text to plant into named records "
-            "before the server starts: mini-agents-seed-v1 (writes "
-            "<file>.applied.json) or artifact-seed-v1."
-        ),
-    )
-    parser.add_argument(
         "--state-summary",
         action="store_true",
         help=(
@@ -499,7 +479,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    mcp = BUILDERS[args.domain](_state_from_args(args))
+    mcp = BUILDERS[args.domain]()
     mcp.list_observer = args.state_summary or state_summary_enabled(os.environ)
     mode_label = "UNSAFE (red-team)" if UNSAFE_MODE else "SAFE"
     print(f"Mini-agent MCP server starting [{args.domain} {mode_label}]")

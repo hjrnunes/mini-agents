@@ -5,7 +5,7 @@ server receives, so the test starts each server in-process and lists its tools
 over an in-memory MCP session. ``runtime-spec.yaml`` must hold what a
 consumer's declared-target reader accepts (``declared-runtime-v1``) and agree
 with the seed hook: the records it names are the ones that variant accepts,
-and each slot's ``max_chars`` is the limit ``--seed-file`` enforces.
+and each slot's ``max_chars`` is the limit the seed API enforces.
 ``tests/test_value_facts.py`` checks ``value-facts.json``.
 """
 

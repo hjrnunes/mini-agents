@@ -57,14 +57,12 @@ def test_a_valid_document_parses_to_items():
 
 def test_the_reason_codes_are_a_closed_set():
     assert REASONS == (
-        "seed_file_unreadable",
         "schema_mismatch",
         "too_many_items",
         "content_too_long",
         "unknown_slot",
         "unknown_record",
         "carrier_mismatch",
-        "applied_write_failed",
     )
 
 

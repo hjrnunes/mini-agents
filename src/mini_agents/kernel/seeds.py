@@ -1,45 +1,37 @@
-"""Startup seeding: plant consumer-authored text into one named record.
+"""Seed documents: plant consumer-authored text into one named record.
 
 Two formats are read: this package's ``mini-agents-seed-v1``, and
 ``artifact-seed-v1``, the ``seed.json`` of an artifact package. They differ in their bounds: the first caps the item count
 and every item's content, the second requires ``carrier_operation`` and bounds
 each item's content by its slot's ``max_chars``, which the declaration files
-state. Only the first writes ``<seed-file>.applied.json``.
+state.
 
 A seed changes state only. No tool is added or changed, so the safe and unsafe
-executors stay in lockstep and the hook works in both modes. Each domain keeps
+executors stay in lockstep and a seed applies in both modes. Each domain keeps
 its slot table in ``domains/<name>/seeds.py``; this module holds what the
 domains share.
 """
 
 from __future__ import annotations
 
-import hashlib
-import importlib
 import json
-import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Optional, Sequence
 
 SEED_SCHEMA_VERSION = "mini-agents-seed-v1"
 ARTIFACT_SEED_VERSION = "artifact-seed-v1"
-APPLIED_SCHEMA_VERSION = "mini-agents-seed-applied-v1"
-EXIT_CODE = 3
 MAX_ITEMS = 4
 MAX_CONTENT_CHARS = 2000
 MODES = ("replace", "append")
 
 REASONS = (
-    "seed_file_unreadable",
     "schema_mismatch",
     "too_many_items",
     "content_too_long",
     "unknown_slot",
     "unknown_record",
     "carrier_mismatch",
-    "applied_write_failed",
 )
 
 _RECORD_REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")
@@ -243,45 +235,3 @@ def _resolve(
         raise SeedError("unknown_record", f"record {item.record_ref!r} for slot {slot.id}")
     _check_length(item, slot.max_chars, f" for slot {slot.id}")
     return slot
-
-
-def seeded_state(domain: str, seed_file: str, *, unsafe: bool) -> Any:
-    """Read the seed file, build the domain state, plant the seed, confirm it."""
-    path = Path(seed_file)
-    try:
-        raw = path.read_bytes()
-    except OSError as exc:
-        raise SeedError("seed_file_unreadable", type(exc).__name__) from exc
-    document = parse_seed(raw)
-    seeds = importlib.import_module(f"mini_agents.domains.{domain}.seeds")
-    state = seeds.new_state()
-    applied = seeds.apply_seed(
-        state, document.items, unsafe=unsafe, carrier=document.carrier_operation
-    )
-    if document.schema_version == SEED_SCHEMA_VERSION:
-        write_applied(path, domain=domain, unsafe=unsafe, raw=raw, slots=applied)
-    return state
-
-
-def applied_path(seed_file: Path) -> Path:
-    return seed_file.with_name(seed_file.name + ".applied.json")
-
-
-def write_applied(
-    seed_file: Path, *, domain: str, unsafe: bool, raw: bytes, slots: list[str]
-) -> None:
-    confirmation = {
-        "schema_version": APPLIED_SCHEMA_VERSION,
-        "domain": domain,
-        "mode": "unsafe" if unsafe else "safe",
-        "sha256": hashlib.sha256(raw).hexdigest(),
-        "slots": slots,
-    }
-    target = applied_path(seed_file)
-    scratch = target.with_name(target.name + ".part")
-    try:
-        scratch.write_text(json.dumps(confirmation, indent=2, sort_keys=True) + "\n")
-        os.replace(scratch, target)
-    except OSError as exc:
-        scratch.unlink(missing_ok=True)
-        raise SeedError("applied_write_failed", type(exc).__name__) from exc

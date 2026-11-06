@@ -1,23 +1,21 @@
-"""--seed-file reads artifact-seed-v1 as well as mini-agents-seed-v1.
+"""artifact-seed-v1 parses through the kernel seed API.
 
 An artifact package's ``seed.json`` names a seed slot, one of its records, a
 mode and the content, and always its carrier operation. It plants the same
-records the mini-agents format plants, its content is bounded by the slot's
-``max_chars``, and it writes no ``<seed-file>.applied.json``.
+records the mini-agents format plants, and its content is bounded by the slot's
+``max_chars``.
 """
 
 from __future__ import annotations
 
 import importlib
 import json
-from types import SimpleNamespace
 
 import pytest
 
 from mini_agents.kernel import mcp_server
 from mini_agents.kernel.seeds import (
     ARTIFACT_SEED_VERSION,
-    EXIT_CODE,
     MAX_ITEMS,
     SEED_SCHEMA_VERSION,
     SeedError,
@@ -216,53 +214,3 @@ def test_an_artifact_seed_on_an_unknown_record_is_refused():
         _apply("klarna", _document([{**ITEM, "record_ref": "ORD 999"}]))
 
     assert refused.value.reason == "unknown_record"
-
-
-class FakeServer:
-    def __init__(self):
-        self.settings = SimpleNamespace(host=None, port=None)
-
-    def run(self, transport):
-        pass
-
-
-@pytest.fixture
-def built(monkeypatch):
-    states = []
-
-    def builder(state=None):
-        states.append(state)
-        return FakeServer()
-
-    monkeypatch.setitem(mcp_server.BUILDERS, "klarna", builder)
-    return states
-
-
-def _argv(path, *extra):
-    return ["--domain", "klarna", "--port", "1", "--seed-file", str(path), *extra]
-
-
-def test_the_server_starts_with_the_artifact_seed_planted(tmp_path, built):
-    path = tmp_path / "seed.json"
-    path.write_bytes(_document())
-
-    mcp_server.main(_argv(path))
-
-    assert built[0].orders["ORD-101"].item == "planted"
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["seed.json"]
-
-
-def test_an_over_long_artifact_seed_stops_the_server(tmp_path, built, capsys):
-    path = tmp_path / "seed.json"
-    path.write_bytes(_document([{**ITEM, "content": "x" * 2001}]))
-
-    with pytest.raises(SystemExit) as stopped:
-        mcp_server.main(_argv(path))
-
-    assert stopped.value.code == EXIT_CODE
-    assert built == []
-    assert capsys.readouterr().err == (
-        "mini-agents seed-error reason=content_too_long "
-        "detail=2001 characters, limit 2000 for slot klarna.order.item\n"
-    )
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["seed.json"]
