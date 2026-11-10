@@ -14,6 +14,14 @@ does not tolerate:
 
 Each replacement carries a marker substring that appears only in the patched
 text, so the script is idempotent and safe to re-run after partial upgrades.
+
+Removal condition: pyproject.toml pins ogx to the release this script fits
+(1.3.1). Remove the script when the locked OGX release handles both delta
+shapes above unpatched. A replacement whose pre-patch text is gone then prints
+"no longer matches the pre-patch text" to stderr (see main), and the sandbox
+image build, which requires every marker, fails. A rewritten block prints the
+same message, so confirm with an unpatched Hermes stream before you remove the
+script.
 """
 
 from __future__ import annotations
