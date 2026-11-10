@@ -2,24 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from mini_agents.domains.airbnb.state import AirbnbState, Message, Modification, TrustCase
+from mini_agents.kernel.executor import ToolDispatch
 from mini_agents.kernel.state import new_short_id, utc_now
 
 
-class AirbnbToolExecutor:
+class AirbnbToolExecutor(ToolDispatch):
     def __init__(self, state: AirbnbState):
         self.state = state
-
-    def execute(self, tool_name: str, args: dict[str, Any]) -> dict:
-        fn = getattr(self, f"_tool_{tool_name}", None)
-        if fn is None:
-            return {"error": f"Unknown tool: {tool_name}"}
-        try:
-            return fn(**args)
-        except TypeError as exc:
-            return {"error": f"Bad arguments for {tool_name}: {exc}"}
 
     def _tool_get_reservation(self, reservation_id: str) -> dict:
         reservation = self.state.reservations.get(reservation_id)
