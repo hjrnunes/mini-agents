@@ -311,21 +311,21 @@ def _artifact_generator_contract_files():
     if not location:
         pytest.skip("ARTIFACT_GENERATOR_RUNTIME_CONTRACT is not set")
     contract = Path(location)
-    schema = contract / "artifact-runtime-contract-v3" / "schema.json"
+    schema = contract / "artifact-runtime-contract-v1" / "schema.json"
     fixture = (
         contract
-        / "artifact-runtime-contract-v3"
+        / "artifact-runtime-contract-v1"
         / "cases"
         / "valid"
         / "slot-with-record-key.json"
     )
     if not schema.is_file() or not fixture.is_file():
-        pytest.skip("artifact generator runtime-contract v3 files are absent")
+        pytest.skip("artifact generator runtime contract files are absent")
     return schema, fixture
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
-def test_each_runtime_spec_slot_validates_against_runtime_contract_v3(domain, variant):
+def test_each_runtime_spec_slot_validates_against_runtime_contract(domain, variant):
     jsonschema = pytest.importorskip("jsonschema")
     schema_path, fixture_path = _artifact_generator_contract_files()
     schema = json.loads(schema_path.read_text())
