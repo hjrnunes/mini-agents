@@ -44,8 +44,9 @@ executor with the rules stripped, nothing else: same tool names, same
 arguments, same state. Any tool added to a safe executor needs its unsafe
 counterpart and its `mcp_server.py` wrapper in the same change.
 
-**Dispatch is by name.** The executor resolves `getattr(self, f"_tool_{name}")`
-at call time. A tool registered in `mcp_server.py` with no `_tool_` method
+**Dispatch is by name.** The six executors inherit `ToolDispatch`
+(`kernel/executor.py`), which resolves `getattr(self, f"_tool_{name}")` at call
+time. A tool registered in `mcp_server.py` with no `_tool_` method
 returns `{"error": "Unknown tool"}` when called, not at import. Run the server
 to catch a wiring gap; imports alone pass.
 

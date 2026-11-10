@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from mini_agents.domains.klarna.state import (
     HITL_REFUND_THRESHOLD,
@@ -13,6 +12,7 @@ from mini_agents.domains.klarna.state import (
     PolicyDoc,
     Refund,
 )
+from mini_agents.kernel.executor import ToolDispatch
 from mini_agents.kernel.state import new_short_id, utc_now
 
 _QUERY_WORD = re.compile(r"\w+")
@@ -40,18 +40,9 @@ def policy_document_matches(doc: PolicyDoc, query: str) -> bool:
     )
 
 
-class KlarnaToolExecutor:
+class KlarnaToolExecutor(ToolDispatch):
     def __init__(self, state: KlarnaState):
         self.state = state
-
-    def execute(self, tool_name: str, args: dict[str, Any]) -> dict:
-        fn = getattr(self, f"_tool_{tool_name}", None)
-        if fn is None:
-            return {"error": f"Unknown tool: {tool_name}"}
-        try:
-            return fn(**args)
-        except TypeError as exc:
-            return {"error": f"Bad arguments for {tool_name}: {exc}"}
 
     def _require_order(self, order_id: str, *, session_only: bool = True):
         order = self.state.orders.get(order_id)
