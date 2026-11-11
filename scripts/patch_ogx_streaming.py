@@ -20,15 +20,17 @@ sits in the result content, never reaches it.
 
 Each replacement carries a marker substring that appears only in the patched
 text, so the script is idempotent and safe to re-run after partial upgrades. A
-replacement counts as applied only when its marker and its whole patched text
-are both present.
+replacement counts as applied only when its marker is present, its whole
+patched text appears once, and no pre-patch block remains outside that text.
 
 A replacement whose pre-patch text is gone, or matches more than once, is an
 error: the script prints "no longer matches the pre-patch text" (or the match
 count) to stderr, writes no file and exits 1. So is a source that keeps a
-marker but not the patched text. `--check` changes nothing and exits 1 unless
-every replacement is applied; the sandbox image build and
-smoke_sandbox_image.sh use it.
+marker but does not read as patched. `--check` changes nothing and exits 1
+unless every replacement is applied; the sandbox image build and
+smoke_sandbox_image.sh use it. The check reads text and cannot prove what the
+code does: a source rewritten on purpose to hold the patched text in an
+inactive place, with no pre-patch block left, still passes.
 
 Removal condition: pyproject.toml pins ogx to the release this script fits
 (1.3.1). Remove the streaming replacements when the locked OGX release handles
@@ -221,6 +223,18 @@ def ogx_path(filename: str) -> Path | None:
     return None
 
 
+def is_applied(text: str, replacement: tuple[str, str, str]) -> bool:
+    """True when the text carries the marker, the patched text once, and no
+    pre-patch block outside the patched text. A patched block may hold its own
+    pre-patch block, so those occurrences do not count."""
+    old, new, marker = replacement
+    return (
+        marker in text
+        and text.count(new) == 1
+        and text.count(old) == new.count(old)
+    )
+
+
 def apply(
     text: str, replacements: list[tuple[str, str, str]], filename: str
 ) -> tuple[str, int, list[str]]:
@@ -228,12 +242,14 @@ def apply(
     message for each replacement whose pre-patch text is gone or ambiguous."""
     patched = 0
     problems = []
-    for index, (old, new, marker) in enumerate(replacements, start=1):
+    for index, replacement in enumerate(replacements, start=1):
+        old, new, marker = replacement
         if marker in text:
-            if new not in text:
+            if not is_applied(text, replacement):
                 problems.append(
                     f"replacement {index}: ogx {filename} has the patch marker "
-                    f"but not the patched text (the source changed after patching)"
+                    f"but does not read as patched (the patched text is missing "
+                    f"or repeated, or the pre-patch text is back)"
                 )
             continue
         matches = text.count(old)
@@ -258,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="change nothing; exit 1 unless every patch marker is present",
+        help="change nothing; exit 1 unless every replacement is applied",
     )
     args = parser.parse_args(argv)
 
@@ -276,11 +292,11 @@ def main(argv: list[str] | None = None) -> int:
             text = sources[filename][1]
             missing = [
                 index
-                for index, (_, new, marker) in enumerate(replacements, start=1)
-                if marker not in text or new not in text
+                for index, replacement in enumerate(replacements, start=1)
+                if not is_applied(text, replacement)
             ]
             found = len(replacements) - len(missing)
-            print(f"ogx {filename}: {found}/{len(replacements)} markers")
+            print(f"ogx {filename}: {found}/{len(replacements)} replacements applied")
             if missing:
                 print(
                     f"ogx {filename} is missing patch replacements {missing}",

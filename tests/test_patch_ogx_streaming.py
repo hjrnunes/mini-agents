@@ -104,7 +104,7 @@ def test_check_fails_on_an_unpatched_source_and_changes_nothing(
 
     assert _snapshot(fake_ogx) == before
     captured = capsys.readouterr()
-    assert "ogx tool_executor.py: 0/1 markers" in captured.out
+    assert "ogx tool_executor.py: 0/1 replacements applied" in captured.out
     assert "ogx tool_executor.py is missing patch replacements [1]" in captured.err
 
 
@@ -137,14 +137,36 @@ def test_a_pre_patch_block_that_matches_twice_fails(script, fake_ogx, capsys):
     assert "matches 2 times in ogx tool_executor.py" in capsys.readouterr().err
 
 
+# A patched source gone wrong. Each takes the patched text and one replacement
+# and returns a text that still carries the marker but no longer reads as
+# patched.
+def _marker_in_a_comment(text, old, new, marker):
+    return text.replace(new, old + f"# {marker}\n")
+
+
+def _patched_text_in_a_string(text, old, new, marker):
+    return text.replace(new, old) + f'\n_INERT = """\n{new}"""\n'
+
+
+def _patched_text_repeated(text, old, new, marker):
+    return text + "\n" + new
+
+
+DOCTORED = {
+    "marker in a comment": _marker_in_a_comment,
+    "patched text in a string": _patched_text_in_a_string,
+    "patched text repeated": _patched_text_repeated,
+}
+
+
+@pytest.mark.parametrize("doctor", DOCTORED)
 @pytest.mark.parametrize("filename", FILENAMES)
-def test_a_marker_without_the_patched_text_fails_clearly(
-    script, fake_ogx, capsys, filename
+def test_a_marker_without_a_patched_source_fails_clearly(
+    script, fake_ogx, capsys, filename, doctor
 ):
-    """The defective block is back and a comment keeps the marker."""
     assert script.main([]) == 0
     old, new, marker = script.TARGETS[filename][0]
-    text = (fake_ogx / filename).read_text().replace(new, old + f"# {marker}\n")
+    text = DOCTORED[doctor]((fake_ogx / filename).read_text(), old, new, marker)
     (fake_ogx / filename).write_text(text)
     before = _snapshot(fake_ogx)
     capsys.readouterr()
@@ -153,10 +175,7 @@ def test_a_marker_without_the_patched_text_fails_clearly(
 
     assert _snapshot(fake_ogx) == before
     err = capsys.readouterr().err
-    assert (
-        f"replacement 1: ogx {filename} has the patch marker but not the patched text"
-        in err
-    )
+    assert f"replacement 1: ogx {filename} has the patch marker but does not read" in err
     assert script.main(["--check"]) == 1
     assert f"ogx {filename} is missing patch replacements [1]" in capsys.readouterr().err
 
@@ -198,18 +217,22 @@ def test_the_installed_ogx_matches_the_patch(script, filename):
 
 
 @requires_ogx
-def test_the_installed_executor_with_only_the_marker_is_refused(script):
-    """The defect is back in the real source and a comment keeps the marker."""
+@pytest.mark.parametrize("doctor", DOCTORED)
+def test_the_installed_executor_gone_wrong_is_refused(script, doctor):
+    """The real tool_executor.py, patched, then doctored."""
+    replacements = script.TOOL_EXECUTOR_REPLACEMENTS
     _, source = _installed_source("tool_executor.py")
-    old, new, marker = script.TOOL_EXECUTOR_REPLACEMENTS[0]
-    doctored = source.replace(new, old).replace(
-        old, old + f"                # {marker}\n"
+    old, new, marker = replacements[0]
+    patched_source, _, problems = script.apply(
+        source.replace(new, old), replacements, "tool_executor.py"
     )
+    assert problems == []
+    assert script.is_applied(patched_source, replacements[0])
 
-    _, patched, problems = script.apply(
-        doctored, script.TOOL_EXECUTOR_REPLACEMENTS, "tool_executor.py"
-    )
+    doctored = DOCTORED[doctor](patched_source, old, new, marker)
 
+    assert not script.is_applied(doctored, replacements[0])
+    _, patched, problems = script.apply(doctored, replacements, "tool_executor.py")
     assert patched == 0
     assert len(problems) == 1
 

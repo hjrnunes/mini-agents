@@ -181,7 +181,7 @@ MiDojo appends the user message to the agent command.
 `docker run --rm --network none` container, prints `PASS` or `FAIL` per check
 and exits non-zero on any failure: non-root user, tiktoken offline,
 `import mini_agents`, a klarna server serving `/sse` on loopback within 20
-seconds, `ogx --help`, every OGX patch marker, console scripts on `PATH`,
+seconds, `ogx --help`, every OGX patch replacement, console scripts on `PATH`,
 writable `$HOME` and `/tmp`, `/sandbox` as the `WORKDIR` owned `1500:1500`
 with mode 755, and for each interpreter copy: a regular file (not a symlink)
 that resolves to itself and imports `mini_agents` and `ogx` from the venv with
