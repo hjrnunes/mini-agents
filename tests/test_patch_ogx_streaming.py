@@ -137,6 +137,30 @@ def test_a_pre_patch_block_that_matches_twice_fails(script, fake_ogx, capsys):
     assert "matches 2 times in ogx tool_executor.py" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("filename", FILENAMES)
+def test_a_marker_without_the_patched_text_fails_clearly(
+    script, fake_ogx, capsys, filename
+):
+    """The defective block is back and a comment keeps the marker."""
+    assert script.main([]) == 0
+    old, new, marker = script.TARGETS[filename][0]
+    text = (fake_ogx / filename).read_text().replace(new, old + f"# {marker}\n")
+    (fake_ogx / filename).write_text(text)
+    before = _snapshot(fake_ogx)
+    capsys.readouterr()
+
+    assert script.main([]) == 1
+
+    assert _snapshot(fake_ogx) == before
+    err = capsys.readouterr().err
+    assert (
+        f"replacement 1: ogx {filename} has the patch marker but not the patched text"
+        in err
+    )
+    assert script.main(["--check"]) == 1
+    assert f"ogx {filename} is missing patch replacements [1]" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize("argv", [[], ["--check"]])
 def test_a_missing_ogx_fails(script, tmp_path, monkeypatch, capsys, argv):
     monkeypatch.setattr(sys, "prefix", str(tmp_path))
@@ -171,6 +195,23 @@ def test_the_installed_ogx_matches_the_patch(script, filename):
     _, _, problems = script.apply(text, script.TARGETS[filename], filename)
 
     assert problems == []
+
+
+@requires_ogx
+def test_the_installed_executor_with_only_the_marker_is_refused(script):
+    """The defect is back in the real source and a comment keeps the marker."""
+    _, source = _installed_source("tool_executor.py")
+    old, new, marker = script.TOOL_EXECUTOR_REPLACEMENTS[0]
+    doctored = source.replace(new, old).replace(
+        old, old + f"                # {marker}\n"
+    )
+
+    _, patched, problems = script.apply(
+        doctored, script.TOOL_EXECUTOR_REPLACEMENTS, "tool_executor.py"
+    )
+
+    assert patched == 0
+    assert len(problems) == 1
 
 
 def _tool_executor(script, *, patched):

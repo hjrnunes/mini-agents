@@ -19,12 +19,15 @@ call item's `error` reads "Error (code 1): None" and the server's text, which
 sits in the result content, never reaches it.
 
 Each replacement carries a marker substring that appears only in the patched
-text, so the script is idempotent and safe to re-run after partial upgrades.
+text, so the script is idempotent and safe to re-run after partial upgrades. A
+replacement counts as applied only when its marker and its whole patched text
+are both present.
 
 A replacement whose pre-patch text is gone, or matches more than once, is an
 error: the script prints "no longer matches the pre-patch text" (or the match
-count) to stderr, writes no file and exits 1. `--check` changes nothing and
-exits 1 unless every marker is present; the sandbox image build and
+count) to stderr, writes no file and exits 1. So is a source that keeps a
+marker but not the patched text. `--check` changes nothing and exits 1 unless
+every replacement is applied; the sandbox image build and
 smoke_sandbox_image.sh use it.
 
 Removal condition: pyproject.toml pins ogx to the release this script fits
@@ -227,6 +230,11 @@ def apply(
     problems = []
     for index, (old, new, marker) in enumerate(replacements, start=1):
         if marker in text:
+            if new not in text:
+                problems.append(
+                    f"replacement {index}: ogx {filename} has the patch marker "
+                    f"but not the patched text (the source changed after patching)"
+                )
             continue
         matches = text.count(old)
         if matches == 1:
@@ -268,8 +276,8 @@ def main(argv: list[str] | None = None) -> int:
             text = sources[filename][1]
             missing = [
                 index
-                for index, (_, _, marker) in enumerate(replacements, start=1)
-                if marker not in text
+                for index, (_, new, marker) in enumerate(replacements, start=1)
+                if marker not in text or new not in text
             ]
             found = len(replacements) - len(missing)
             print(f"ogx {filename}: {found}/{len(replacements)} markers")
