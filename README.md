@@ -90,8 +90,13 @@ uv run --frozen mini-agents-stack
 
 The `gateway` extra installs OGX from `uv.lock` (Python 3.12 or newer). A bare
 `uv sync` removes it. `scripts/patch_ogx_streaming.py` patches the installed
-OGX's streaming tool-call merge for vLLM Hermes-style deltas; the sandbox image
-applies it too (see [Sandbox image](#sandbox-image)). `mini-agents-stack --mcp-only` starts the six
+OGX in two places: the streaming tool-call merge, for vLLM Hermes-style deltas,
+and the MCP call item, so an `isError` result keeps its text in `error` (OGX
+alone reports `Error (code 1): None`). The script exits 1 and writes nothing
+if either OGX source no longer matches the text it expects;
+`scripts/patch_ogx_streaming.py --check` changes nothing and exits 1 unless
+every patch is present. The sandbox image applies it too (see
+[Sandbox image](#sandbox-image)). `mini-agents-stack --mcp-only` starts the six
 SSE servers and skips OGX.
 
 ## Sandbox image
@@ -108,11 +113,11 @@ IMAGE_ID="$(docker image inspect asago-mini-agents-sandbox:dev --format '{{.Id}}
 ```
 
 The image installs `uv.lock` with `uv sync --frozen --extra gateway`, applies
-`scripts/patch_ogx_streaming.py` (the build fails unless every replacement
-lands), runs as uid 1500 and holds tiktoken's `cl100k_base` file in
-`/opt/app-root/tiktoken`, so nothing downloads at run time. Under `docker run`
-the venv `/opt/app-root/.venv/bin` leads `PATH`, `HOME` is `/home/app` and the
-working directory is `/sandbox`.
+`scripts/patch_ogx_streaming.py` (both OGX patches; the build fails unless
+every replacement lands), runs as uid 1500 and holds tiktoken's `cl100k_base`
+file in `/opt/app-root/tiktoken`, so nothing downloads at run time. Under
+`docker run` the venv `/opt/app-root/.venv/bin` leads `PATH`, `HOME` is
+`/home/app` and the working directory is `/sandbox`.
 
 **Identity under OpenShell.** OpenShell takes the image's last `WORKDIR` as
 the sandbox workspace and refuses to start unless the image user can write

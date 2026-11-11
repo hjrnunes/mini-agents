@@ -53,16 +53,8 @@ check "klarna MCP server serves /sse on loopback within ${READY_BUDGET}s" \
 check "ogx --help" \
     ogx --help
 
-check "OGX streaming patch present (all replacements)" \
-    python -c "
-import sys
-sys.path.insert(0, '/opt/app-root/src/scripts')
-import patch_ogx_streaming as p
-text = p.streaming_path().read_text()
-missing = [i for i, (_, _, marker) in enumerate(p.REPLACEMENTS, 1) if marker not in text]
-print(f'{len(p.REPLACEMENTS) - len(missing)}/{len(p.REPLACEMENTS)} markers')
-sys.exit(1 if missing else 0)
-"
+check "OGX patches present (streaming and tool_executor, all replacements)" \
+    python /opt/app-root/src/scripts/patch_ogx_streaming.py --check
 
 check "console scripts on PATH" \
     sh -c 'for c in python ogx mini-agents mini-agents-stack; do command -v "$c" || exit 1; done'

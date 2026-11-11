@@ -1,5 +1,6 @@
-"""Patch OGX's streaming tool-call merge for vLLM Hermes-style deltas.
+"""Patch the installed OGX where the mini-agents gateway meets two defects.
 
+streaming.py: OGX's streaming tool-call merge for vLLM Hermes-style deltas.
 vLLM (Hermes tool parser) streams tool calls in shapes OGX's chunk-merge
 does not tolerate:
 
@@ -12,25 +13,37 @@ does not tolerate:
   hallucinated-tool fallback exists for exactly this case, but it crashes
   first on tool_call_id=None.
 
+tool_executor.py: the error text of an MCP tool result. OGX's MCP runtime
+sets error_code=1 for an isError result and never sets error_message, so the
+call item's `error` reads "Error (code 1): None" and the server's text, which
+sits in the result content, never reaches it.
+
 Each replacement carries a marker substring that appears only in the patched
 text, so the script is idempotent and safe to re-run after partial upgrades.
 
+A replacement whose pre-patch text is gone, or matches more than once, is an
+error: the script prints "no longer matches the pre-patch text" (or the match
+count) to stderr, writes no file and exits 1. `--check` changes nothing and
+exits 1 unless every marker is present; the sandbox image build and
+smoke_sandbox_image.sh use it.
+
 Removal condition: pyproject.toml pins ogx to the release this script fits
-(1.3.1). Remove the script when the locked OGX release handles both delta
-shapes above unpatched. A replacement whose pre-patch text is gone then prints
-"no longer matches the pre-patch text" to stderr (see main), and the sandbox
-image build, which requires every marker, fails. A rewritten block prints the
-same message, so confirm with an unpatched Hermes stream before you remove the
-script.
+(1.3.1). Remove the streaming replacements when the locked OGX release handles
+both delta shapes above unpatched, and the tool_executor replacement when it
+keeps an MCP isError result's text in `error`. Remove the script when no
+replacement is left. A rewritten block fails with the same message, so confirm
+with an unpatched Hermes stream or an unpatched isError result before you
+remove a replacement.
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
 # (old, new, marker) — marker is a substring unique to the patched text.
-REPLACEMENTS: list[tuple[str, str, str]] = [
+STREAMING_REPLACEMENTS: list[tuple[str, str, str]] = [
     # 1. First-chunk construction: tolerate name=None and id=None.
     (
         """                            # arguments may be None in the first streaming delta (name/index arrive before arguments)
@@ -159,8 +172,36 @@ REPLACEMENTS: list[tuple[str, str, str]] = [
     ),
 ]
 
+TOOL_EXECUTOR_REPLACEMENTS: list[tuple[str, str, str]] = [
+    # 1. MCP isError result: the error text is in content, not error_message.
+    #    Only the error branch changes; a result with error_message keeps it,
+    #    and a successful call never reaches this branch.
+    (
+        """                ec = getattr(result, "error_code", "unknown")
+                em = getattr(result, "error_message", "")
+                message.error = f"Error (code {ec}): {em}"
+""",
+        """                ec = getattr(result, "error_code", "unknown")
+                em = getattr(result, "error_message", "")
+                # The MCP runtime sets error_code and leaves error_message None; the
+                # server's error text is in content. Keep it rather than render "None".
+                if not em and (error_content := getattr(result, "content", None)):
+                    em = interleaved_content_as_str(error_content)
+                message.error = f"Error (code {ec}): {em}"
+""",
+        "em = interleaved_content_as_str(error_content)",
+    ),
+]
 
-def streaming_path() -> Path | None:
+# File name under ogx/providers/inline/responses/builtin/responses/, with its
+# replacements.
+TARGETS: dict[str, list[tuple[str, str, str]]] = {
+    "streaming.py": STREAMING_REPLACEMENTS,
+    "tool_executor.py": TOOL_EXECUTOR_REPLACEMENTS,
+}
+
+
+def ogx_path(filename: str) -> Path | None:
     for base in Path(sys.prefix, "lib").glob("python*/site-packages"):
         path = (
             base
@@ -170,37 +211,97 @@ def streaming_path() -> Path | None:
             / "responses"
             / "builtin"
             / "responses"
-            / "streaming.py"
+            / filename
         )
         if path.is_file():
             return path
     return None
 
 
-def main() -> int:
-    streaming = streaming_path()
-    if streaming is None:
-        print("ogx streaming.py not found; is ogx installed?", file=sys.stderr)
-        return 1
-    text = streaming.read_text()
+def apply(
+    text: str, replacements: list[tuple[str, str, str]], filename: str
+) -> tuple[str, int, list[str]]:
+    """Return the patched text, the count of replacements that landed, and one
+    message for each replacement whose pre-patch text is gone or ambiguous."""
     patched = 0
-    for index, (old, new, marker) in enumerate(REPLACEMENTS, start=1):
+    problems = []
+    for index, (old, new, marker) in enumerate(replacements, start=1):
         if marker in text:
             continue
-        if old in text:
+        matches = text.count(old)
+        if matches == 1:
             text = text.replace(old, new)
             patched += 1
-        else:
-            print(
-                f"replacement {index}: ogx streaming.py no longer matches the "
-                f"pre-patch text; skipping (upstream may have fixed it)",
-                file=sys.stderr,
+        elif matches == 0:
+            problems.append(
+                f"replacement {index}: ogx {filename} no longer matches the "
+                f"pre-patch text (upstream changed)"
             )
-    if patched:
-        streaming.write_text(text)
-        print(f"patched {streaming} ({patched} replacement(s))")
-    else:
-        print("ogx streaming.py already patched")
+        else:
+            problems.append(
+                f"replacement {index}: the pre-patch text matches {matches} "
+                f"times in ogx {filename}; expected once"
+            )
+    return text, patched, problems
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="change nothing; exit 1 unless every patch marker is present",
+    )
+    args = parser.parse_args(argv)
+
+    sources = {}
+    for filename in TARGETS:
+        path = ogx_path(filename)
+        if path is None:
+            print(f"ogx {filename} not found; is ogx installed?", file=sys.stderr)
+            return 1
+        sources[filename] = (path, path.read_text())
+
+    if args.check:
+        failed = False
+        for filename, replacements in TARGETS.items():
+            text = sources[filename][1]
+            missing = [
+                index
+                for index, (_, _, marker) in enumerate(replacements, start=1)
+                if marker not in text
+            ]
+            found = len(replacements) - len(missing)
+            print(f"ogx {filename}: {found}/{len(replacements)} markers")
+            if missing:
+                print(
+                    f"ogx {filename} is missing patch replacements {missing}",
+                    file=sys.stderr,
+                )
+                failed = True
+        return 1 if failed else 0
+
+    # Plan every file before writing any, so a drifted target leaves the
+    # others as they were.
+    plans = {}
+    problems = []
+    for filename, replacements in TARGETS.items():
+        path, text = sources[filename]
+        patched_text, patched, file_problems = apply(text, replacements, filename)
+        plans[filename] = (path, patched_text, patched)
+        problems.extend(file_problems)
+    if problems:
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        print("no file written", file=sys.stderr)
+        return 1
+
+    for filename, (path, patched_text, patched) in plans.items():
+        if patched:
+            path.write_text(patched_text)
+            print(f"patched {path} ({patched} replacement(s))")
+        else:
+            print(f"ogx {filename} already patched")
     return 0
 
 

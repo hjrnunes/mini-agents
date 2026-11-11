@@ -39,14 +39,14 @@ COPY scripts ./scripts
 # One sync, not a dependencies layer plus a project layer: uv 0.10.4 does not
 # match nvidia-cusparselt-cu13's manylinux2014_sbsa tag on arm64 and reinstalls
 # it on every sync. The cache mount keeps rebuilds fast instead.
-# Then patch OGX and fail the build unless every replacement landed, and
-# recompile the patched module. tiktoken checks the downloaded cl100k_base file
-# against the hash it ships with.
+# Then patch OGX (streaming.py and tool_executor.py) and fail the build unless
+# every replacement landed, and recompile the patched modules. tiktoken checks
+# the downloaded cl100k_base file against the hash it ships with.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --extra gateway \
     && python scripts/patch_ogx_streaming.py \
-    && python -c "import sys; sys.path.insert(0, 'scripts'); import patch_ogx_streaming as p; text = p.streaming_path().read_text(); missing = [i for i, (_, _, m) in enumerate(p.REPLACEMENTS, 1) if m not in text]; sys.exit(f'OGX patch missing replacements {missing}' if missing else 0)" \
-    && python -m compileall -q "$(python -c "import sys; sys.path.insert(0, 'scripts'); import patch_ogx_streaming as p; print(p.streaming_path())")" \
+    && python scripts/patch_ogx_streaming.py --check \
+    && python -m compileall -q "$(python -c "import sys; sys.path.insert(0, 'scripts'); import patch_ogx_streaming as p; print(p.ogx_path('streaming.py').parent)")" \
     && python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
     && ls "$TIKTOKEN_CACHE_DIR"
 
