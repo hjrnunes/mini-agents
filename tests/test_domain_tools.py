@@ -1,9 +1,7 @@
 """No domain exposes a tool that executes commands, touches files or fetches URLs.
 
-In the sandbox the MCP server's interpreter may reach a host port (the
-policy's ``control_plane`` rule) that no other process may reach. The model
-reaches that process only through the domain tools, so none of them may run a
-command, open a shell, read or write a file, or make a request to a URL.
+A domain tool that runs a command, opens a shell, reads or writes a file, or
+requests a URL would let the model act outside the ledger. None may.
 
 The primary guard is ``REVIEWED_TOOLS``: each domain's registered tool list,
 safe and unsafe build, must equal it exactly. A new tool fails the test until

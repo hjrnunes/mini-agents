@@ -27,8 +27,9 @@ A replacement whose pre-patch text is gone, or matches more than once, is an
 error: the script prints "no longer matches the pre-patch text" (or the match
 count) to stderr, writes no file and exits 1. So is a source that keeps a
 marker but does not read as patched. `--check` changes nothing and exits 1
-unless every replacement is applied; the sandbox image build and
-smoke_sandbox_image.sh use it. The check reads text and cannot prove what the
+unless every replacement is applied; it is for local use and the tests. The
+plain `Dockerfile` runs the patch itself, so a miss there fails the build.
+The check reads text and cannot prove what the
 code does: a source rewritten on purpose to hold the patched text in an
 inactive place, with no pre-patch block left, still passes.
 
