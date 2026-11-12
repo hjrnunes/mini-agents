@@ -304,8 +304,10 @@ def test_each_carrier_schema_declares_the_record_key_and_slot_field(domain, vari
 def _artifact_generator_contract_files():
     """Find the artifact generator's runtime-contract folder.
 
-    Set ``ARTIFACT_GENERATOR_RUNTIME_CONTRACT`` to its
-    ``contracts/runtime-contract`` folder; the test skips without it.
+    Set ``ARTIFACT_GENERATOR_RUNTIME_CONTRACT`` to its ``runtime-contract``
+    folder, the one that holds ``artifact-runtime-contract-v1``. The test skips
+    when the variable is unset and fails when it names a folder without the
+    version 1 files, so a wrong path never passes as a skip.
     """
     location = os.environ.get("ARTIFACT_GENERATOR_RUNTIME_CONTRACT")
     if not location:
@@ -320,7 +322,11 @@ def _artifact_generator_contract_files():
         / "slot-with-record-key.json"
     )
     if not schema.is_file() or not fixture.is_file():
-        pytest.skip("artifact generator runtime contract files are absent")
+        pytest.fail(
+            f"ARTIFACT_GENERATOR_RUNTIME_CONTRACT={location} has no "
+            "artifact-runtime-contract-v1/schema.json and "
+            "artifact-runtime-contract-v1/cases/valid/slot-with-record-key.json"
+        )
     return schema, fixture
 
 
@@ -336,6 +342,69 @@ def test_each_runtime_spec_slot_validates_against_runtime_contract(domain, varia
     ]
 
     jsonschema.Draft202012Validator(schema).validate(contract)
+
+
+def _locating_outcome():
+    """What the contract locator does: its files, a skip or a failure."""
+    try:
+        return _artifact_generator_contract_files()
+    except (pytest.skip.Exception, pytest.fail.Exception) as outcome:
+        return type(outcome)
+
+
+def _write_contract_folder(root, *, schema=True, fixture=True, version="v1"):
+    kit = root / f"artifact-runtime-contract-{version}"
+    (kit / "cases" / "valid").mkdir(parents=True)
+    if schema:
+        (kit / "schema.json").write_text("{}")
+    if fixture:
+        (kit / "cases" / "valid" / "slot-with-record-key.json").write_text("{}")
+    return root
+
+
+def test_an_unset_contract_folder_skips(monkeypatch):
+    monkeypatch.delenv("ARTIFACT_GENERATOR_RUNTIME_CONTRACT", raising=False)
+
+    assert _locating_outcome() is pytest.skip.Exception
+
+
+def test_an_empty_contract_variable_skips_like_an_unset_one(monkeypatch):
+    monkeypatch.setenv("ARTIFACT_GENERATOR_RUNTIME_CONTRACT", "")
+
+    assert _locating_outcome() is pytest.skip.Exception
+
+
+@pytest.mark.parametrize(
+    "layout",
+    ["missing folder", "empty folder", "other version only", "no schema", "no fixture"],
+)
+def test_a_set_contract_folder_without_the_version_1_files_fails(
+    monkeypatch, tmp_path, layout
+):
+    root = tmp_path / "runtime-contract"
+    if layout == "empty folder":
+        root.mkdir()
+    elif layout == "other version only":
+        _write_contract_folder(root, version="v3")
+    elif layout == "no schema":
+        _write_contract_folder(root, schema=False)
+    elif layout == "no fixture":
+        _write_contract_folder(root, fixture=False)
+    monkeypatch.setenv("ARTIFACT_GENERATOR_RUNTIME_CONTRACT", str(root))
+
+    assert _locating_outcome() is pytest.fail.Exception
+
+
+def test_a_set_contract_folder_with_the_version_1_files_returns_them(
+    monkeypatch, tmp_path
+):
+    root = _write_contract_folder(tmp_path / "runtime-contract")
+    monkeypatch.setenv("ARTIFACT_GENERATOR_RUNTIME_CONTRACT", str(root))
+
+    schema, fixture = _locating_outcome()
+
+    assert schema == root / "artifact-runtime-contract-v1" / "schema.json"
+    assert fixture.name == "slot-with-record-key.json"
 
 
 def _artifact_seed(slot, record, content):
