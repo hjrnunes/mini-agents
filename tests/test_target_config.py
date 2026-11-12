@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 import pytest
-from target_lifecycle import PLACEHOLDER, fill, read_config
+from target_lifecycle import PLACEHOLDER, agent_url, fill, read_config
 
 from mini_agents.kernel import declarations, mcp_server
 from mini_agents.kernel.gateway import API_KEY_ENV, BASE_URL_ENV, MODEL_ID_ENV
@@ -178,6 +178,15 @@ def test_no_string_in_the_file_looks_like_a_credential(domain, variant):
 
     assert not re.search(r"sk-[A-Za-z0-9]|Bearer |api[_-]?key\s*[:=]\s*\S", text)
     assert "https://" not in text
+
+
+@pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
+def test_the_agent_url_follows_the_gateway_port_a_run_picks(domain, variant):
+    config = _config(domain, variant)
+    declared = config["gateway"]["port"]
+
+    assert agent_url(config, declared) == config["endpoint"]["agent_url"]
+    assert agent_url(config, 43127) == "http://127.0.0.1:43127/v1"
 
 
 def test_the_gateway_port_is_not_a_target_port():

@@ -15,7 +15,9 @@ because the declaration files lie beside the config, and ``runtime_contract``
 because the contract is built from ``runtime-spec.yaml`` elsewhere. ``gateway``
 is the block this repository adds:
 
-- ``port``: where the Responses API answers (``endpoint.agent_url``).
+- ``port``: where the Responses API answers, the port ``endpoint.agent_url``
+  names. A run that starts the gateway on another port (tests that run in
+  parallel do) reaches it there; ``agent_url`` names only the declared port.
 - ``start``: the command that starts the gateway.
 - ``env``: how the model endpoint and key reach the gateway, by variable name.
   A value is a placeholder the testing tool fills from its model profile; the
@@ -61,7 +63,9 @@ _HEADER = """\
 #                  needs the gateway extra)
 #   {{port}}         the port the target runs on: endpoint.port, or a free one
 #   {{mcp_url}}      endpoint.mcp_url at that port
-#   {{gateway_port}} the port the gateway runs on: gateway.port, or a free one
+#   {{gateway_port}} the port the gateway runs on: gateway.port, which is the
+#                  port endpoint.agent_url names. A run that picks another
+#                  port reaches the gateway there, with the rest of that URL.
 #   {{model}}        the model id of the run's model profile
 #   {{model_url}}    the base URL of that profile's endpoint
 #   {{model_key}}    that profile's key; this file never holds one

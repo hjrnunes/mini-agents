@@ -16,6 +16,7 @@ import httpx
 import pytest
 from model_stub import ANSWER, StubModel
 from target_lifecycle import (
+    agent_url,
     listening,
     read_config,
     start_gateway,
@@ -178,7 +179,7 @@ def test_the_gateway_refuses_the_tool_servers_own_port(monkeypatch):
         )
 
 
-def _ask(gateway_port, mcp_port, model):
+def _ask(agent_url, mcp_port, model):
     request = {
         "model": model,
         "input": "Show me listing LST-101.",
@@ -193,9 +194,7 @@ def _ask(gateway_port, mcp_port, model):
         ],
         "max_output_tokens": 512,
     }
-    reply = httpx.post(
-        f"http://127.0.0.1:{gateway_port}/v1/responses", json=request, timeout=120
-    )
+    reply = httpx.post(f"{agent_url}/responses", json=request, timeout=120)
     reply.raise_for_status()
     return reply.json()
 
@@ -245,7 +244,7 @@ def test_a_gateway_started_from_the_config_runs_a_turn_through_the_shim(
                 extra_args=["--state-dir", str(state)],
             )
             try:
-                answer = _ask(port, mcp_port, model)
+                answer = _ask(agent_url(config, port), mcp_port, model)
             finally:
                 code = process.stop()
         finally:
@@ -263,9 +262,10 @@ def test_a_gateway_started_from_the_config_runs_a_turn_through_the_shim(
     assert len(completions) == 2
     assert [row["rewrites"] for row in _rows(log)] == [rewrites, rewrites]
     for row in _rows(log):
-        assert row["request_model"] == model
+        assert set(row) == {"sequence", "route", "status", "rewrites", "error"}
         assert row["route"] == "/chat/completions"
         assert row["status"] == 200
+        assert row["error"] is None
     for received in completions:
         body = received.json()
         assert body["model"] == model

@@ -114,17 +114,23 @@ def test_a_model_with_no_rules_gets_its_body_byte_for_byte():
     assert rewritten(body, Rewrites(token_param="max_tokens")) == (body, [])
 
 
+def test_the_rules_come_from_a_table_by_model_id():
+    table = {"a": Rewrites(reasoning_effort="low")}
+
+    assert rewrites_for("a", table) == Rewrites(reasoning_effort="low")
+    assert rewrites_for("gpt-6-sol", table) == Rewrites()
+
+
 @pytest.fixture
 def upstream():
     with StubModel("gpt-6-sol") as stub:
         yield stub
 
 
-def _shim(upstream, tmp_path, rewrites=GPT_6_SOL, **options):
+def _shim(upstream, tmp_path, **options):
     return ModelShim(
         upstream.url,
         options.pop("key", KEY),
-        rewrites,
         log_path=tmp_path / "log",
         **options,
     )
@@ -239,9 +245,7 @@ def test_an_unreachable_provider_is_a_502_and_a_logged_error(tmp_path):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         dead = sock.getsockname()[1]
-    shim = ModelShim(
-        f"http://127.0.0.1:{dead}/v1", KEY, GPT_6_SOL, log_path=tmp_path / "log"
-    )
+    shim = ModelShim(f"http://127.0.0.1:{dead}/v1", KEY, log_path=tmp_path / "log")
     with shim:
         response = httpx.post(
             f"{shim.url}/chat/completions", content=_body(), timeout=10
@@ -266,7 +270,6 @@ def test_the_rewrite_log_names_each_completion_and_holds_no_secret(upstream, tmp
         "sequence": 1,
         "route": "/chat/completions",
         "status": 200,
-        "request_model": "gpt-6-sol",
         "rewrites": [
             {"op": "inject", "field": "reasoning_effort", "value": "none"},
             {"op": "drop", "field": "max_tokens"},
@@ -278,8 +281,70 @@ def test_the_rewrite_log_names_each_completion_and_holds_no_secret(upstream, tmp
     assert "messages" not in text
 
 
+@pytest.mark.parametrize(
+    "named",
+    [{"model": "another-model"}, {"model": ""}, {"model": 7}, {}],
+    ids=["other model", "empty name", "not a name", "no model"],
+)
+def test_a_request_that_does_not_name_a_listed_model_is_forwarded_untouched(
+    upstream, tmp_path, named
+):
+    body = json.dumps({**named, "max_tokens": 7, "messages": []}, indent=1).encode()
+    with _shim(upstream, tmp_path) as shim:
+        _post(shim, "/chat/completions", body)
+
+    (received,) = upstream.completions()
+    assert received.body == body
+    (row,) = [json.loads(line) for line in (tmp_path / "log").read_text().splitlines()]
+    assert row["rewrites"] == []
+
+
+def test_a_shim_applies_the_rules_of_the_model_each_request_names(upstream, tmp_path):
+    table = {
+        "a": Rewrites(reasoning_effort="low"),
+        "b": Rewrites(reasoning_effort="high"),
+    }
+    with ModelShim(upstream.url, KEY, table) as shim:
+        for name in ("a", "b", "c"):
+            _post(shim, "/chat/completions", _body(model=name))
+
+    efforts = [r.json().get("reasoning_effort") for r in upstream.completions()]
+    assert efforts == ["low", "high", None]
+
+
+def test_a_value_the_client_chose_never_reaches_the_log(upstream, tmp_path):
+    secret = "sk-client-chose-this-0123456789"
+    with _shim(upstream, tmp_path) as shim:
+        _post(shim, "/chat/completions", _body(reasoning_effort=secret))
+
+    (received,) = upstream.completions()
+    assert received.json()["reasoning_effort"] == "none"
+    text = (tmp_path / "log").read_text()
+    assert secret not in text
+    (row,) = [json.loads(line) for line in text.splitlines()]
+    assert row["rewrites"] == [
+        {"op": "overwrite", "field": "reasoning_effort", "value": "none"}
+    ]
+
+
+def test_every_value_in_a_log_row_is_the_shims_own(upstream, tmp_path):
+    marker = "client-value-0123456789"
+    body = _body(
+        model="gpt-6-sol",
+        messages=[{"role": "user", "content": marker}],
+        reasoning_effort=marker,
+        max_tokens=1,
+        max_completion_tokens=1,
+        metadata={"k": marker},
+    )
+    with _shim(upstream, tmp_path) as shim:
+        _post(shim, "/chat/completions", body)
+
+    assert marker not in (tmp_path / "log").read_text()
+
+
 def test_a_shim_without_a_log_path_writes_no_log(upstream, tmp_path):
-    shim = ModelShim(upstream.url, KEY, GPT_6_SOL)
+    shim = ModelShim(upstream.url, KEY)
     with shim:
         _post(shim, "/chat/completions", _body())
 

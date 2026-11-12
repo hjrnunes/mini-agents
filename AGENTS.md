@@ -132,7 +132,8 @@ explicit `provider_model_id`, never `auto`, and keeps the key in its shim
 (`kernel/model_shim.py`). A model whose provider needs its requests changed
 gets a `MODEL_REWRITES` entry there (today `gpt-6-sol`); the rewrite rules and
 their tests live with the shim (`tests/test_model_shim.py`). Never record a
-request body, header or key in a log: the rewrite log holds the ops only.
+request body, header, key or any value a request chose in a log: the rewrite
+log holds the ops only, and the shim looks a request's rules up by its `model`.
 `tests/test_target_lifecycle.py` and `tests/test_gateway.py` run the configs
 through a stand-in for the testing tool; real OGX there needs the `gateway`
 extra.

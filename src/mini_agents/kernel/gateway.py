@@ -19,8 +19,8 @@ the target config's ``gateway.env`` names:
 
 OGX talks to the model shim (``kernel/model_shim.py``) on a free loopback port,
 with a placeholder key. The shim holds the real key and rewrites the requests
-of a model that needs it (``MODEL_REWRITES``). ``MINI_AGENTS_REWRITE_LOG`` names
-the file the shim appends its rewrite rows to.
+that name a model that needs it (``MODEL_REWRITES``; OGX names ``MODEL_ID``).
+``MINI_AGENTS_REWRITE_LOG`` names the file the shim appends its rewrite rows to.
 
 The process runs until OGX exits or it gets SIGTERM or SIGINT, then stops OGX
 and the shim and removes the scratch directory. OGX's stores live in that
@@ -44,12 +44,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from mini_agents.kernel.model_shim import (
-    LOOPBACK_HOST,
-    REWRITE_LOG_ENV,
-    ModelShim,
-    rewrites_for,
-)
+from mini_agents.kernel.model_shim import LOOPBACK_HOST, REWRITE_LOG_ENV, ModelShim
 from mini_agents.kernel.stack import _ogx_module_available, ogx_config_path
 
 BASE_URL_ENV = "OPENAI_BASE_URL"
@@ -191,7 +186,6 @@ def main(argv: list[str] | None = None) -> int:
     shim = ModelShim(
         upstream,
         os.environ.get(API_KEY_ENV) or None,
-        rewrites_for(model_id),
         log_path=Path(log) if log else None,
     )
     ogx: subprocess.Popen[bytes] | None = None

@@ -314,6 +314,12 @@ the run, `{model}` (the model id), `{model_url}` (its base URL) and
 `{model_key}` (its key). The file never holds a model URL, key or id, only the
 placeholders, and the key reaches the gateway only through its environment.
 
+`endpoint.mcp_url` follows `{port}`, so a run may start the target on any free
+port. `endpoint.agent_url` names the gateway's declared port, `gateway.port`,
+which is what `{gateway_port}` holds by default. A run that starts the gateway
+on another port, as parallel tests do, reaches it there and keeps the rest of
+that URL.
+
 - **Start**: run `endpoint.start`. The target serves once its port accepts a
   connection; there is no health command.
 - **Reset**: stop the target and start it again. The ledger is in memory, so a
@@ -341,7 +347,7 @@ SIGTERM removes, so each start is a fresh gateway.
   (`kernel/model_shim.py`). The shim adds the real key on the way to the
   provider, so the key is in neither OGX's config nor its stores nor any log.
 - **The shim rewrites requests for models that need it.** It changes only
-  `POST /chat/completions`, by the model id the request names:
+  `POST /chat/completions`, by the model id each request names:
 
   | Model id | `reasoning_effort` | Token limit |
   |----------|--------------------|-------------|
@@ -350,9 +356,11 @@ SIGTERM removes, so each start is a fresh gateway.
   Every other model id passes through unchanged. To give a model a rewrite,
   add it to `MODEL_REWRITES` in `kernel/model_shim.py`.
 - **`MINI_AGENTS_REWRITE_LOG`** names a file the shim appends one JSON row to
-  for each chat completion: its `sequence`, `route`, upstream `status`,
-  `request_model`, the `rewrites` it applied and any `error`. A row holds no
-  body, header or key.
+  for each chat completion: its `sequence`, `route`, upstream `status`, the
+  `rewrites` it applied and the `error` class when the provider was not
+  reached. A row holds only what the shim itself decides: no body, header or
+  key, no model name a request chose, and no value a rewrite replaced (an
+  overwrite of `reasoning_effort` logs the new value, not the old one).
 
 `tests/test_target_lifecycle.py` runs each of the six configs, and the fixture
 target, through a stand-in for the testing tool: start, restart, stop, and no

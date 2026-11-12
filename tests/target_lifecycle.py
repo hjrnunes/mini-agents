@@ -152,6 +152,20 @@ def start_target(
     return process, port
 
 
+def agent_url(config: Mapping[str, Any], gateway_port: int) -> str:
+    """Return the agent URL of a gateway run on ``gateway_port``.
+
+    ``endpoint.agent_url`` names the gateway's declared port; a run that picks
+    another port keeps the rest of the URL.
+    """
+    declared = config["gateway"]["port"]
+    url = str(config["endpoint"]["agent_url"])
+    marker = f":{declared}/"
+    if marker not in url:
+        raise ValueError(f"agent_url {url!r} does not name the gateway port {declared}")
+    return url.replace(marker, f":{gateway_port}/", 1)
+
+
 def start_gateway(
     config: Mapping[str, Any],
     *,

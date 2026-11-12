@@ -8,7 +8,9 @@
 #                  needs the gateway extra)
 #   {port}         the port the target runs on: endpoint.port, or a free one
 #   {mcp_url}      endpoint.mcp_url at that port
-#   {gateway_port} the port the gateway runs on: gateway.port, or a free one
+#   {gateway_port} the port the gateway runs on: gateway.port, which is the
+#                  port endpoint.agent_url names. A run that picks another
+#                  port reaches the gateway there, with the rest of that URL.
 #   {model}        the model id of the run's model profile
 #   {model_url}    the base URL of that profile's endpoint
 #   {model_key}    that profile's key; this file never holds one

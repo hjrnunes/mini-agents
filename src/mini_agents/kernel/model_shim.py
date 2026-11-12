@@ -7,19 +7,22 @@ everything else through byte for byte. The gateway never sees the key.
 A model that refuses what OGX sends is listed in ``MODEL_REWRITES`` by the
 provider's model id. ``gpt-6-sol`` refuses function tools unless a
 ``reasoning_effort`` is set, and refuses ``max_tokens``. The shim rewrites only
-POST ``<base>/chat/completions`` bodies:
+POST ``<base>/chat/completions`` bodies, by the ``model`` each body names:
 
 - ``reasoning_effort``, when the model has one, is set; an existing value is
   overwritten.
 - ``token_param`` ``max_completion_tokens`` renames ``max_tokens`` or, when the
   body already has ``max_completion_tokens``, drops ``max_tokens``.
 
-A body that is not a JSON object, another route, and a body the model's rules
-leave alone are forwarded unchanged. A rewritten body is serialized compactly.
+A body that names another model or none, a body that is not a JSON object,
+another route, and a body the model's rules leave alone are forwarded
+unchanged. A rewritten body is serialized compactly.
 
 ``MINI_AGENTS_REWRITE_LOG`` names a file that gets one JSON line per chat
-completion: the route, the status, the model the request named and the
-rewrites made, in order. It holds no header, key or body.
+completion: the route, the status, the rewrites made, in order, and the error
+class when the provider was not reached. Everything in a row comes from the
+shim, never from a request: no header, key or body, no model name the request
+chose, and no value a rewrite replaced.
 """
 
 from __future__ import annotations
@@ -82,10 +85,12 @@ MODEL_REWRITES: Mapping[str, Rewrites] = {
 }
 
 
-def rewrites_for(model: str | None) -> Rewrites:
+def rewrites_for(
+    model: str | None, table: Mapping[str, Rewrites] = MODEL_REWRITES
+) -> Rewrites:
     """Return the rewrites of ``model``; none for an unlisted or absent one."""
 
-    return MODEL_REWRITES.get(model, Rewrites()) if model else Rewrites()
+    return table.get(model, Rewrites()) if model else Rewrites()
 
 
 def rewritten(body: bytes, rewrites: Rewrites) -> tuple[bytes, list[dict[str, Any]]]:
@@ -145,6 +150,16 @@ def _requested_model(body: bytes) -> str | None:
     return model if isinstance(model, str) and model else None
 
 
+def _loggable(changes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return ``changes`` without the values a request supplied.
+
+    An overwrite names the value it replaced (``was``), which the client chose
+    and may be any string. The rest comes from the rule table.
+    """
+
+    return [{k: v for k, v in change.items() if k != "was"} for change in changes]
+
+
 def _reply(request: BaseHTTPRequestHandler, status: int, message: str) -> None:
     body = json.dumps({"error": message}).encode()
     try:
@@ -175,14 +190,15 @@ class ModelShim:
     ``upstream_base_url`` is the provider's base URL. Its path is kept, so a
     client that uses :attr:`url` as its base URL reaches the same routes. The
     shim replaces the client's ``Authorization`` header with ``api_key``, and
-    passes the client's own through when ``api_key`` is None.
+    passes the client's own through when ``api_key`` is None. ``rewrites``
+    maps a model id to the rewrites of the chat completions that name it.
     """
 
     def __init__(
         self,
         upstream_base_url: str,
         api_key: str | None,
-        rewrites: Rewrites = Rewrites(),
+        rewrites: Mapping[str, Rewrites] = MODEL_REWRITES,
         *,
         log_path: Path | None = None,
         transport: httpx.BaseTransport | None = None,
@@ -245,11 +261,11 @@ class ModelShim:
         completion = request.command == "POST" and route == CHAT_COMPLETIONS
         changes: list[dict[str, Any]] = []
         if completion:
-            requested_model = _requested_model(body)
-            body, changes = rewritten(body, self._rewrites)
+            rules = rewrites_for(_requested_model(body), self._rewrites)
+            body, changes = rewritten(body, rules)
         status, error = self._forward(request, body)
         if completion:
-            self._record(route, status, requested_model, changes, error)
+            self._record(route, status, _loggable(changes), error)
         if status == 0:
             _reply(request, 502, "model provider unreachable")
         request.close_connection = True
@@ -303,7 +319,6 @@ class ModelShim:
         self,
         route: str,
         status: int,
-        request_model: str | None,
         changes: list[dict[str, Any]],
         error: str | None,
     ) -> None:
@@ -315,7 +330,6 @@ class ModelShim:
                 "sequence": self._sequence,
                 "route": route,
                 "status": status,
-                "request_model": request_model,
                 "rewrites": changes,
                 "error": error,
             }
