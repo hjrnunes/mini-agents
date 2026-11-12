@@ -121,6 +121,21 @@ Tests instantiate the safe and unsafe executors directly and assert on the
 state summary — never on chat text, never through a transport. Same attack
 args in, two ledger assertions out.
 
+**Runtime-contract cases.** `tests/test_declarations.py` validates every
+declared seed slot against the artifact generator's runtime contract. Set
+`ARTIFACT_GENERATOR_RUNTIME_CONTRACT` to the artifact generator's
+`runtime-contract` folder, the one that holds `artifact-runtime-contract-v1/`
+(in its checkout: `packages/asago-package/src/asago_package/contracts/runtime-contract`).
+The six `test_each_runtime_spec_slot_validates_against_runtime_contract` cases
+skip only when the variable is unset or empty. They fail when it names a folder
+without `artifact-runtime-contract-v1/schema.json` and
+`artifact-runtime-contract-v1/cases/valid/slot-with-record-key.json`, so a
+wrong path never passes as a skip. Read the `-rs` summary for `0 skipped`:
+
+```sh
+ARTIFACT_GENERATOR_RUNTIME_CONTRACT=<runtime-contract folder> uv run --frozen pytest -q -rs
+```
+
 ## Runtime
 
 Supports Python 3.11 or newer, the common floor of the Asago pipeline
@@ -134,4 +149,5 @@ raise the floor without a matching change in those repositories.
 — green is done. The `gateway` extra installs OGX from `uv.lock` on Python 3.12
 or newer; a plain `uv sync` removes it, and `uv run` without `--frozen` can
 re-sync it away. `scripts/patch_ogx_streaming.py --check` exits 1 unless every
-replacement landed.
+replacement landed. Without `ARTIFACT_GENERATOR_RUNTIME_CONTRACT`, a green run
+still skips six runtime-contract cases (see Testing).
