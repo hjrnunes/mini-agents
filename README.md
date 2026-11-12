@@ -242,8 +242,9 @@ loopback.
 
 ## Declaration files
 
-Each domain describes itself the way a declared target is described, in three
-files per variant, shipped with the package under
+Each domain describes itself the way a declared target is described, in four
+files per variant (the fourth, `target.yaml`, is the next section), shipped with
+the package under
 `src/mini_agents/declarations/<domain>/safe/` and
 `src/mini_agents/declarations/<domain>/unsafe/` (the `--unsafe` server, a
 target of its own):
@@ -284,3 +285,78 @@ while any file differs from the generated one, or while a slot's
 `max_chars` is not the limit the seed API enforces. `tests/test_value_facts.py`
 fails while a value fact names a tool argument the variant does not list or a
 ledger path its state does not have.
+
+## Target config (start, reset, stop)
+
+Each variant ships a `target.yaml` beside its declaration files. A testing tool
+starts, resets and stops the target from that file alone. It is `target-v2`
+written as JSON under a comment header, which YAML reads unchanged, and the
+generator writes it (`scripts/gen_declarations.py`, above); never edit it by
+hand.
+
+- `target`, `kind` (`live`) and `authorized_as` (`mock`): which target this is,
+  and that it is a mock a test may mutate.
+- `endpoint`: `port`, `mcp_url` and `agent_url`; `start`, the command that
+  serves the tools; `start_stage.discover`, the extra arguments a discovery
+  start adds (`--state-summary`, so the observer is listed);
+  `discover_only_tools`, the observer's name; `unset_env`, the variable a
+  start removes from its environment, so the observer stays hidden in every
+  other stage.
+- `gateway`: `port`, `start` and `env`, how to run the Responses API in front
+  of the target (below). A target config with no `gateway` block has no
+  gateway of its own.
+- `discovery`: the target id, the authorization scope and the operations, as in
+  `runtime-spec.yaml`.
+
+A command is a list of arguments with placeholders: `{python}` (the checkout's
+interpreter), `{port}`, `{mcp_url}`, `{gateway_port}`, and the model profile of
+the run, `{model}` (the model id), `{model_url}` (its base URL) and
+`{model_key}` (its key). The file never holds a model URL, key or id, only the
+placeholders, and the key reaches the gateway only through its environment.
+
+- **Start**: run `endpoint.start`. The target serves once its port accepts a
+  connection; there is no health command.
+- **Reset**: stop the target and start it again. The ledger is in memory, so a
+  start is the reset (see "Reset (a fresh start)"), and the config names no
+  reset command. A target whose config does name `health` and `reset` commands,
+  such as the fixture in `tests/fixtures/stub_target`, resets in place.
+- **Stop**: send SIGTERM. The target and the gateway both exit on it.
+
+### Gateway
+
+`python -m mini_agents.kernel.gateway --connector ID --mcp-url URL --port PORT`
+serves the Responses API for one target on loopback `PORT`, with that target
+as its only tool server. It reads the model endpoint from the environment the
+config's `gateway.env` fills: `OPENAI_BASE_URL`, `OPENAI_API_KEY` and
+`MODEL_ID`. It needs the `gateway` extra (see "Without Docker"), and its OGX
+config is rendered from `ogx-config.yaml` into a temporary directory that
+SIGTERM removes, so each start is a fresh gateway.
+
+- **The model id is explicit.** The gateway registers `MODEL_ID` as both the
+  model id and its `provider_model_id`. The stack's own `ogx-config.yaml` says
+  `auto`, which OGX resolves to the first model the provider lists, so a
+  provider that lists many would answer as another model.
+- **The key stays in the gateway.** OGX holds a placeholder key and sends its
+  model requests to a loopback shim in the same process
+  (`kernel/model_shim.py`). The shim adds the real key on the way to the
+  provider, so the key is in neither OGX's config nor its stores nor any log.
+- **The shim rewrites requests for models that need it.** It changes only
+  `POST /chat/completions`, by the model id the request names:
+
+  | Model id | `reasoning_effort` | Token limit |
+  |----------|--------------------|-------------|
+  | `gpt-6-sol` | set to `none` | `max_tokens` dropped, `max_completion_tokens` kept (a lone `max_tokens` is renamed) |
+
+  Every other model id passes through unchanged. To give a model a rewrite,
+  add it to `MODEL_REWRITES` in `kernel/model_shim.py`.
+- **`MINI_AGENTS_REWRITE_LOG`** names a file the shim appends one JSON row to
+  for each chat completion: its `sequence`, `route`, upstream `status`,
+  `request_model`, the `rewrites` it applied and any `error`. A row holds no
+  body, header or key.
+
+`tests/test_target_lifecycle.py` runs each of the six configs, and the fixture
+target, through a stand-in for the testing tool: start, restart, stop, and no
+process left behind. `tests/test_gateway.py` runs real OGX from the airbnb
+config against a stub model provider (`tests/model_stub.py`), checks the
+requests the provider receives, and scans the files the run wrote for the key.
+No test calls a real model.

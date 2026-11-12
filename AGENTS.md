@@ -22,13 +22,19 @@ Seeded attack scenarios live in `README.md`.
   `parse_seed` reads it and the domain `apply_seed` plants it into a state.
 - **Declaration file** (`declared-runtime-v1`) — a generated `tools-list.json`,
   `runtime-spec.yaml` or `value-facts.json`, checked against the live servers.
+- **Target config** (`target-v2`): a generated `target.yaml` beside them. It
+  holds the commands that start a variant and its gateway, and no secret.
+- **Gateway**: OGX for one target, behind a loopback model shim that holds
+  the model key and rewrites the requests of a model that needs it.
 
 ## Architecture
 
 One kernel, three domains, one rule per domain:
 
 - `kernel/` — `mcp_server.py` (FastMCP servers + OGX wiring) and `stack.py`
-  (one process tree: six SSE servers, Responses API on `:8321`).
+  (one process tree: six SSE servers, Responses API on `:8321`); `gateway.py`
+  and `model_shim.py` (one target's OGX and its model shim); `target_config.py`
+  (the `target.yaml` generator).
 - `domains/<name>/` — `state.py` (in-memory world + seed data), `tools.py`
   (safe executor), `tools_unsafe.py` (red-team counterpart), `seeds.py` (slots
   the seed API can plant, and each tool's read or write access).
@@ -115,6 +121,22 @@ changes; `tests/test_declarations.py` checks them against the live servers,
 and `tests/test_value_facts.py` that every fact names a listed argument or a
 ledger path. Leave a value undeclared when it holds no single record kind.
 
+**Target config.** `target.yaml` (`target_config.py`, written with the
+declaration files) is how a testing tool starts, resets and stops a variant:
+`endpoint.start`, a `gateway` block, placeholders for the port, the checkout's
+interpreter and the run's model profile (`{model}`, `{model_url}`,
+`{model_key}`). It never holds a model URL, key or id, and a test fails on one.
+The ports come from `stack.MCP_SERVERS`; a new domain gets its config from the
+same regeneration. The gateway (`kernel/gateway.py`) registers `MODEL_ID` as an
+explicit `provider_model_id`, never `auto`, and keeps the key in its shim
+(`kernel/model_shim.py`). A model whose provider needs its requests changed
+gets a `MODEL_REWRITES` entry there (today `gpt-6-sol`); the rewrite rules and
+their tests live with the shim (`tests/test_model_shim.py`). Never record a
+request body, header or key in a log: the rewrite log holds the ops only.
+`tests/test_target_lifecycle.py` and `tests/test_gateway.py` run the configs
+through a stand-in for the testing tool; real OGX there needs the `gateway`
+extra.
+
 ## Testing
 
 Tests instantiate the safe and unsafe executors directly and assert on the
@@ -148,6 +170,7 @@ raise the floor without a matching change in those repositories.
 `.venv/bin/python scripts/patch_ogx_streaming.py`, then `uv run --frozen pytest`
 — green is done. The `gateway` extra installs OGX from `uv.lock` on Python 3.12
 or newer; a plain `uv sync` removes it, and `uv run` without `--frozen` can
-re-sync it away. `scripts/patch_ogx_streaming.py --check` exits 1 unless every
-replacement landed. Without `ARTIFACT_GENERATOR_RUNTIME_CONTRACT`, a green run
+re-sync it away. The gateway tests start real OGX and skip without it.
+`scripts/patch_ogx_streaming.py --check` exits 1 unless every replacement
+landed. Without `ARTIFACT_GENERATOR_RUNTIME_CONTRACT`, a green run
 still skips six runtime-contract cases (see Testing).
