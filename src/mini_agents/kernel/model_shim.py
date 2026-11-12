@@ -22,7 +22,9 @@ unchanged. A rewritten body is serialized compactly.
 completion: the route, the status, the rewrites made, in order, and the error
 class when the provider was not reached. Everything in a row comes from the
 shim, never from a request: no header, key or body, no model name the request
-chose, and no value a rewrite replaced.
+chose, and no value a rewrite replaced. A row is written after its response
+ends, so a reader that needs every row reads after ``ModelShim.stop``, which
+waits for the requests in flight, for at most ``DRAIN_SECONDS``.
 """
 
 from __future__ import annotations
@@ -47,6 +49,9 @@ CHAT_COMPLETIONS = "/chat/completions"
 # A reasoning model can think for minutes before the first byte; the caller's
 # own timeout fires first.
 UPSTREAM_TIMEOUT = httpx.Timeout(700.0, connect=30.0)
+# How long ``stop`` waits for the requests in flight. A request that is still
+# open then waits on the provider, not on a client that is about to stop.
+DRAIN_SECONDS = 5.0
 
 _HOP_BY_HOP = frozenset(
     {
@@ -192,6 +197,7 @@ class ModelShim:
     shim replaces the client's ``Authorization`` header with ``api_key``, and
     passes the client's own through when ``api_key`` is None. ``rewrites``
     maps a model id to the rewrites of the chat completions that name it.
+    :meth:`stop` waits up to ``DRAIN_SECONDS`` for the requests in flight.
     """
 
     def __init__(
@@ -211,6 +217,10 @@ class ModelShim:
         self._log_path = log_path
         self._log_lock = threading.Lock()
         self._sequence = 0
+        self._idle = threading.Condition()
+        self._in_flight = 0
+        self._stop_lock = threading.Lock()
+        self._stopped = False
         self._client = httpx.Client(
             timeout=UPSTREAM_TIMEOUT, transport=transport, follow_redirects=False
         )
@@ -235,11 +245,26 @@ class ModelShim:
         return self
 
     def stop(self) -> None:
-        self._server.shutdown()
-        self._server.server_close()
-        self._client.close()
-        if self._thread is not None:
-            self._thread.join(timeout=5)
+        """Stop serving, once the requests in flight end or the drain runs out.
+
+        A client has the end of a response before the shim writes that
+        request's log row. Waiting for the requests the shim has begun to
+        serve means a reader that reads after ``stop`` sees every row of a
+        response a client received. A request still open when the drain ends
+        is abandoned, and its row may be missing. A second call does nothing.
+        """
+
+        with self._stop_lock:
+            if self._stopped:
+                return
+            self._stopped = True
+            self._server.shutdown()
+            with self._idle:
+                self._idle.wait_for(lambda: self._in_flight == 0, timeout=DRAIN_SECONDS)
+            self._server.server_close()
+            self._client.close()
+            if self._thread is not None:
+                self._thread.join(timeout=5)
 
     def __enter__(self) -> ModelShim:
         return self.start()
@@ -248,6 +273,16 @@ class ModelShim:
         self.stop()
 
     def handle(self, request: BaseHTTPRequestHandler) -> None:
+        with self._idle:
+            self._in_flight += 1
+        try:
+            self._serve(request)
+        finally:
+            with self._idle:
+                self._in_flight -= 1
+                self._idle.notify_all()
+
+    def _serve(self, request: BaseHTTPRequestHandler) -> None:
         path = request.path.split("?", 1)[0]
         inside = path == self._base_path or path.startswith(self._base_path + "/")
         if not inside:

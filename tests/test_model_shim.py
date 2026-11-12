@@ -11,11 +11,13 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 
 import httpx
 import pytest
 from model_stub import ANSWER, StubModel
 
+from mini_agents.kernel import model_shim
 from mini_agents.kernel.model_shim import (
     MODEL_REWRITES,
     ModelShim,
@@ -349,3 +351,82 @@ def test_a_shim_without_a_log_path_writes_no_log(upstream, tmp_path):
         _post(shim, "/chat/completions", _body())
 
     assert not (tmp_path / "log").exists()
+
+
+def _rows(tmp_path):
+    log = tmp_path / "log"
+    if not log.exists():
+        return []
+    return [json.loads(line) for line in log.read_text().splitlines()]
+
+
+def _stream_on_a_thread(shim, first_chunk):
+    """Read a streamed completion on a thread; set ``first_chunk`` on its first line."""
+
+    def read():
+        try:
+            with httpx.stream(
+                "POST",
+                f"{shim.url}/chat/completions",
+                content=_body(stream=True),
+                timeout=30,
+            ) as response:
+                for line in response.iter_lines():
+                    if line.startswith("data:"):
+                        first_chunk.set()
+        except httpx.HTTPError:
+            pass
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    return reader
+
+
+def test_stopping_the_shim_waits_for_a_request_in_flight_and_its_log_row(
+    tmp_path, monkeypatch
+):
+    # The drain must not end first: the provider is released well inside it.
+    monkeypatch.setattr(model_shim, "DRAIN_SECONDS", 30.0, raising=False)
+    release = threading.Event()
+    first_chunk = threading.Event()
+    with StubModel("gpt-6-sol", pause=release) as upstream:
+        shim = _shim(upstream, tmp_path).start()
+        reader = _stream_on_a_thread(shim, first_chunk)
+        assert first_chunk.wait(timeout=10)
+
+        stopper = threading.Thread(target=shim.stop, daemon=True)
+        stopper.start()
+        # The server notices a shutdown within its 0.5 s poll. A stop that does
+        # not wait for the request is done long before this window ends.
+        stopper.join(timeout=3.0)
+        waiting = stopper.is_alive()
+        release.set()
+        stopper.join(timeout=10)
+        reader.join(timeout=5)
+        rows = _rows(tmp_path)
+
+    assert waiting
+    assert [(row["status"], row["error"]) for row in rows] == [(200, None)]
+
+
+def test_stopping_the_shim_waits_for_the_drain_and_no_longer_on_a_stuck_request(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(model_shim, "DRAIN_SECONDS", 1.0, raising=False)
+    first_chunk = threading.Event()
+    with StubModel("gpt-6-sol", pause=threading.Event()) as upstream:
+        shim = _shim(upstream, tmp_path).start()
+        # A daemon thread: stop does not close the abandoned request's client.
+        _stream_on_a_thread(shim, first_chunk)
+        assert first_chunk.wait(timeout=10)
+
+        started = time.monotonic()
+        shim.stop()
+        stopped = time.monotonic() - started
+        shim.stop()
+        again = time.monotonic() - started - stopped
+
+    # The stub holds the request for 30 s. A stop waits for the 1 s drain, not
+    # for the request, and a second stop does not wait for the drain again.
+    assert 1.0 <= stopped < 5
+    assert again < 0.3
