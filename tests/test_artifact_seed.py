@@ -192,7 +192,7 @@ def _item_without(key):
         (_item_without("record_ref"), "item keys"),
         (_document([{**ITEM, "record_ref": ""}]), "record_ref"),
         (_document([{**ITEM, "slot": ""}]), "slot"),
-        (_document(version="artifact-seed-v2"), "schema_version"),
+        (_document(version="artifact-seed-v9"), "schema_version"),
     ],
 )
 def test_a_malformed_artifact_seed_is_a_schema_mismatch(raw, detail):
