@@ -1,0 +1,23 @@
+# A fixture target for the lifecycle tests: not a mini-agents domain. Same
+# target-v2 shape as the generated configs, written as JSON, which YAML reads
+# unchanged. It names a health and a reset command and has no gateway block.
+{
+  "schema_version": "target-v2",
+  "target": "stub",
+  "kind": "live",
+  "authorized_as": "mock",
+  "endpoint": {
+    "agent_url": "http://127.0.0.1:8321/v1",
+    "mcp_url": "http://127.0.0.1:{port}/sse",
+    "port": 8899,
+    "start": ["{python}", "tests/fixtures/stub_target/server.py", "--port", "{port}"],
+    "health": ["{python}", "tests/fixtures/stub_target/server.py", "--probe", "{port}"],
+    "reset": ["{python}", "tests/fixtures/stub_target/server.py", "--reset", "{port}"]
+  },
+  "discovery": {
+    "target_id": "stub",
+    "authorization_scope_id": "stub-local",
+    "read_only_operations": [],
+    "mutating_operations": []
+  }
+}

@@ -107,6 +107,7 @@ def test_the_files_ship_inside_the_package(domain, variant):
     assert (shipped / "tools-list.json").is_file()
     assert (shipped / "runtime-spec.yaml").is_file()
     assert (shipped / "value-facts.json").is_file()
+    assert (shipped / "target.yaml").is_file()
 
 
 @pytest.mark.parametrize("domain, variant", CASES, ids=IDS)
@@ -133,7 +134,7 @@ def test_the_tools_list_leaves_out_the_state_summary(domain, variant):
 def test_the_committed_files_are_what_the_generator_writes():
     files = declarations.rendered()
 
-    assert len(files) == len(CASES) * 3
+    assert len(files) == len(CASES) * 4
     stale = [str(path) for path, text in files.items() if path.read_text() != text]
     assert stale == [], "run scripts/gen_declarations.py"
 

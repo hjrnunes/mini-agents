@@ -10,6 +10,8 @@ every listed tool as ``read_only`` or ``mutating`` from the domain's
 ``value-facts.json`` holds the domain's ``VALUE_FACTS``
 (:mod:`mini_agents.kernel.value_facts`), the record kind or date format of
 tool arguments and ledger values, which a scanner reads with ``--value-facts``.
+``target.yaml`` is the variant's config, the file a testing tool starts, resets
+and stops the target from (:mod:`mini_agents.kernel.target_config`).
 
 Each domain has two variants, each a target of its own:
 ``declarations/<domain>/safe/`` and ``declarations/<domain>/unsafe/``
@@ -33,7 +35,7 @@ from typing import Any
 
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from mini_agents.kernel import mcp_server
+from mini_agents.kernel import mcp_server, target_config
 
 DECLARATIONS_DIR = Path(__file__).resolve().parent.parent / "declarations"
 VARIANTS = ("safe", "unsafe")
@@ -121,6 +123,12 @@ def render_value_facts(domain: str) -> str:
     return json.dumps(value_facts(domain), indent=2) + "\n"
 
 
+def render_target(domain: str, variant: str) -> str:
+    """The variant's ``target.yaml`` (:mod:`mini_agents.kernel.target_config`)."""
+    operations = runtime_spec(domain, variant)["operations"]
+    return target_config.render_target_config(domain, variant, operations)
+
+
 def read_runtime_spec(path: Path) -> dict[str, Any]:
     """Read a spec this module wrote: JSON under ``#`` comment lines."""
     lines = path.read_text().splitlines()
@@ -136,4 +144,7 @@ def rendered() -> dict[Path, str]:
             files[directory / TOOLS_LIST_FILE] = render_tools_list(domain, variant)
             files[directory / RUNTIME_SPEC_FILE] = render_runtime_spec(domain, variant)
             files[directory / VALUE_FACTS_FILE] = render_value_facts(domain)
+            files[directory / target_config.TARGET_FILE] = render_target(
+                domain, variant
+            )
     return files

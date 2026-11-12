@@ -1,4 +1,6 @@
-"""Write (or with --check, verify) src/mini_agents/declarations/."""
+"""Write (or with --check, verify) src/mini_agents/declarations/.
+
+That is each variant's declaration files and its target.yaml."""
 
 from __future__ import annotations
 
