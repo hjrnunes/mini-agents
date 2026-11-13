@@ -27,9 +27,11 @@ and the shim and removes the scratch directory. OGX gets SIGTERM and
 ``TERMINATE_GRACE_SECONDS`` to exit; an OGX that is still running then gets
 SIGKILL, so a signal ends the gateway in a bounded time whatever OGX does with
 it. OGX runs in the gateway's process group, so a signal to that group reaches
-both. OGX's stores live in the scratch directory, so each start is a fresh
-gateway. ``--state-dir`` keeps the directory: it holds the rendered OGX config
-(a placeholder key, never the real one) and OGX's stores.
+both. The gateway ends OGX and not a process OGX started; OGX starts none in
+this setup, and a SIGKILL to the group would reach one. OGX's stores live in
+the scratch directory, so each start is a fresh gateway. ``--state-dir`` keeps
+the directory: it holds the rendered OGX config (a placeholder key, never the
+real one) and OGX's stores.
 """
 
 from __future__ import annotations
