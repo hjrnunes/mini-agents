@@ -14,9 +14,9 @@ POST ``<base>/chat/completions`` bodies, by the ``model`` each body names:
 - ``token_param`` ``max_completion_tokens`` renames ``max_tokens`` or, when the
   body already has ``max_completion_tokens``, drops ``max_tokens``.
 
-A body that names another model or none, a body that is not a JSON object,
-another route, and a body the model's rules leave alone are forwarded
-unchanged. A rewritten body is serialized compactly.
+A body that names another model or none, a body that is not a JSON object (or
+is nested too deeply to read), another route, and a body the model's rules
+leave alone are forwarded unchanged. A rewritten body is serialized compactly.
 
 ``MINI_AGENTS_REWRITE_LOG`` names a file that gets one JSON line per chat
 completion: the route, the status, the rewrites made, in order, and the error
@@ -25,14 +25,25 @@ shim, never from a request: no header, key or body, no model name the request
 chose, and no value a rewrite replaced. A row is written after its response
 ends, so a reader that needs every row reads after ``ModelShim.stop``, which
 waits for the requests in flight, for at most ``DRAIN_SECONDS``.
+
+A request the shim cannot serve gets a fixed error and is not forwarded: a
+request target or header that is not plain ASCII, a ``Content-Length`` that is
+not one run of digits (or is repeated), a body above ``MAX_BODY_BYTES`` or
+shorter than its ``Content-Length``, and a method or request line the server
+does not read. The error text never holds a value the request chose, and
+neither does stderr: the shim logs no request, and a handler that fails writes
+one line that names the exception class and nothing else.
 """
 
 from __future__ import annotations
 
 import json
+import re
+import sys
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -52,6 +63,17 @@ UPSTREAM_TIMEOUT = httpx.Timeout(700.0, connect=30.0)
 # How long ``stop`` waits for the requests in flight. A request that is still
 # open then waits on the provider, not on a client that is about to stop.
 DRAIN_SECONDS = 5.0
+# The largest request body the shim reads. A chat completion with a long
+# history is a few megabytes; a ``Content-Length`` far above that is not a
+# request to serve.
+MAX_BODY_BYTES = 64 * 1024 * 1024
+_READ_CHUNK = 1024 * 1024
+# A request target is visible ASCII; a header name is an HTTP token and a
+# value is printable ASCII or a tab. What else a client sends is refused before
+# anything parses it (the HTTP client turns it into an exception that names it).
+_TARGET = re.compile(r"[\x21-\x7e]+")
+_HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+_HEADER_VALUE = re.compile(r"[\x20-\x7e\t]*")
 
 _HOP_BY_HOP = frozenset(
     {
@@ -101,8 +123,8 @@ def rewrites_for(
 def rewritten(body: bytes, rewrites: Rewrites) -> tuple[bytes, list[dict[str, Any]]]:
     """Return the body with ``rewrites`` applied, and what changed, in order.
 
-    A body that is not a JSON object, and one the rules leave alone, come back
-    byte for byte.
+    A body that is not a JSON object, one nested too deeply to read or write
+    again, and one the rules leave alone, come back byte for byte.
     """
 
     if not rewrites.active:
@@ -139,13 +161,16 @@ def rewritten(body: bytes, rewrites: Rewrites) -> tuple[bytes, list[dict[str, An
             changes.append(
                 {"op": "rename", "from": MAX_TOKENS, "to": MAX_COMPLETION_TOKENS}
             )
-    return json.dumps(payload, separators=(",", ":")).encode(), changes
+    try:
+        return json.dumps(payload, separators=(",", ":")).encode(), changes
+    except RecursionError:
+        return body, []
 
 
 def _object(body: bytes) -> dict[str, Any] | None:
     try:
         payload = json.loads(body)
-    except ValueError:
+    except (ValueError, RecursionError):
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -179,14 +204,78 @@ def _reply(request: BaseHTTPRequestHandler, status: int, message: str) -> None:
     request.close_connection = True
 
 
+class _Refused(Exception):
+    """A request the shim does not serve, and the fixed reply it gets."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+def _read_body(request: BaseHTTPRequestHandler) -> bytes:
+    """Read the body ``Content-Length`` declares; raise ``_Refused`` if it cannot.
+
+    A missing header means no body. Anything but one run of ASCII digits is
+    refused: ``int`` also takes signs, underscores and surrounding blanks.
+    """
+
+    declared = request.headers.get_all("Content-Length", [])
+    if not declared:
+        return b""
+    text = declared[0]
+    if len(declared) > 1 or not (text.isascii() and text.isdigit()):
+        raise _Refused(400, "invalid Content-Length")
+    # Beyond 18 digits the value is over the cap, and ``int`` need not read it.
+    if len(text.lstrip("0")) > 18 or int(text) > MAX_BODY_BYTES:
+        raise _Refused(413, "the body is larger than the shim accepts")
+    remaining = int(text)
+    chunks: list[bytes] = []
+    while remaining:
+        try:
+            chunk = request.rfile.read(min(remaining, _READ_CHUNK))
+        except OSError:
+            chunk = b""
+        if not chunk:
+            raise _Refused(400, "the body is shorter than its Content-Length")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         """Say nothing: a request line holds the path and a query."""
+
+    def send_error(
+        self, code: int, message: str | None = None, explain: str | None = None
+    ) -> None:
+        """Reply with the status's own phrase.
+
+        The server's reply to a request line it cannot read repeats that line.
+        """
+        try:
+            phrase = HTTPStatus(code).phrase
+        except ValueError:
+            phrase = "error"
+        _reply(self, code, phrase)
 
     def _relay(self) -> None:
         self.server.shim.handle(self)  # type: ignore[attr-defined]
 
     do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = _relay
+
+
+class _Server(ThreadingHTTPServer):
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """Name the exception class of a failed handler, and nothing else.
+
+        The server's own report prints the traceback, whose last line holds the
+        exception's message, and that message can hold what the client sent.
+        """
+        error = sys.exc_info()[1]
+        name = type(error).__name__
+        print(f"model shim: a request failed ({name})", file=sys.stderr, flush=True)
 
 
 class ModelShim:
@@ -224,7 +313,7 @@ class ModelShim:
         self._client = httpx.Client(
             timeout=UPSTREAM_TIMEOUT, transport=transport, follow_redirects=False
         )
-        self._server = ThreadingHTTPServer((LOOPBACK_HOST, 0), _Handler)
+        self._server = _Server((LOOPBACK_HOST, 0), _Handler)
         self._server.daemon_threads = True
         self._server.shim = self  # type: ignore[attr-defined]
         self._thread: threading.Thread | None = None
@@ -282,16 +371,31 @@ class ModelShim:
                 self._in_flight -= 1
                 self._idle.notify_all()
 
-    def _serve(self, request: BaseHTTPRequestHandler) -> None:
+    def _accept(self, request: BaseHTTPRequestHandler) -> tuple[str, bytes]:
+        """Return the path and the body of a request the shim serves.
+
+        Raise ``_Refused`` for any other. Nothing here reads a value into an
+        error: each refusal has its own fixed text.
+        """
+        if not _TARGET.fullmatch(request.path):
+            raise _Refused(400, "malformed request target")
+        for name, value in request.headers.items():
+            if not (_HEADER_NAME.fullmatch(name) and _HEADER_VALUE.fullmatch(value)):
+                raise _Refused(400, "malformed header")
         path = request.path.split("?", 1)[0]
         inside = path == self._base_path or path.startswith(self._base_path + "/")
         if not inside:
-            _reply(request, 404, "outside the shim's base path")
-            return
+            raise _Refused(404, "outside the shim's base path")
         if "chunked" in request.headers.get("Transfer-Encoding", "").lower():
-            _reply(request, 411, "a request body needs a Content-Length")
+            raise _Refused(411, "a request body needs a Content-Length")
+        return path, _read_body(request)
+
+    def _serve(self, request: BaseHTTPRequestHandler) -> None:
+        try:
+            path, body = self._accept(request)
+        except _Refused as refusal:
+            _reply(request, refusal.status, refusal.message)
             return
-        body = request.rfile.read(int(request.headers.get("Content-Length") or 0))
         route = (path[len(self._base_path) :] or "/").rstrip("/") or "/"
         completion = request.command == "POST" and route == CHAT_COMPLETIONS
         changes: list[dict[str, Any]] = []

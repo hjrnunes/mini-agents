@@ -132,8 +132,11 @@ explicit `provider_model_id`, never `auto`, and keeps the key in its shim
 (`kernel/model_shim.py`). A model whose provider needs its requests changed
 gets a `MODEL_REWRITES` entry there (today `gpt-6-sol`); the rewrite rules and
 their tests live with the shim (`tests/test_model_shim.py`). Never record a
-request body, header, key or any value a request chose in a log: the rewrite
-log holds the ops only, and the shim looks a request's rules up by its `model`.
+request body, header, key or any value a request chose in a log or on stderr:
+the rewrite log holds the ops only, and the shim looks a request's rules up by
+its `model`. The shim refuses what it cannot serve with a fixed error. A new
+field it reads from a request joins the marker cases in
+`tests/test_model_shim_input.py`.
 The gateway ends OGX with SIGTERM, then SIGKILL after
 `TERMINATE_GRACE_SECONDS`; keep that wait bounded
 (`tests/test_gateway_shutdown.py`, which needs no OGX).

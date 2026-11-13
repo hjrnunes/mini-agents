@@ -363,6 +363,13 @@ SIGTERM removes, so each start is a fresh gateway.
   reached. A row holds only what the shim itself decides: no body, header or
   key, no model name a request chose, and no value a rewrite replaced (an
   overwrite of `reasoning_effort` logs the new value, not the old one).
+- **The shim answers what it cannot serve with a fixed error.** A request
+  target or header that is not plain ASCII, a `Content-Length` that is not one
+  run of digits, a body above 64 MiB or shorter than its `Content-Length`, and
+  a request line the server cannot read get a 4xx reply with a fixed text, and
+  the request is not forwarded. No value a request chose reaches the shim's
+  stderr or its log: a handler that fails writes one line that names the
+  exception class.
 
 `tests/test_target_lifecycle.py` runs each of the six configs, and the fixture
 target, through a stand-in for the testing tool: start, restart, stop, and no
@@ -370,4 +377,6 @@ process left behind. `tests/test_gateway.py` runs real OGX from the airbnb
 config against a stub model provider (`tests/model_stub.py`), checks the
 requests the provider receives, and scans the files the run wrote for the key.
 `tests/test_gateway_shutdown.py` runs the gateway over a stand-in OGX that
-ignores SIGTERM. No test calls a real model.
+ignores SIGTERM, and `tests/test_model_shim_input.py` puts a marker through
+each field of a request that a client controls and reads the shim's stderr and
+log for it. No test calls a real model.
