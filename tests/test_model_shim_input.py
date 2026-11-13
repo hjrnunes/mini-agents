@@ -31,6 +31,9 @@ ROOT = Path(__file__).resolve().parent.parent
 KEY = "sk-shim-input-test-key-0123456789abcdef"
 # The body cap of the shim under test; far below the shim's own default.
 CAP = 1024
+# More leading zeros than ``int`` converts: Python refuses a string of over
+# 4300 digits, whatever its value.
+PADDING = 5000
 EXCHANGE_TIMEOUT = 5.0
 
 SHIM_MAIN = """
@@ -169,6 +172,11 @@ REFUSED = [
     Case("length-over-the-cap", _raw(LINE, f"Content-Length: {CAP + 1}"), 413),
     Case("length-too-big-to-allocate", _raw(LINE, "Content-Length: " + "9" * 20), 413),
     Case(
+        "length-padded-with-zeros-over-the-cap",
+        _raw(LINE, "Content-Length: " + "0" * PADDING + str(CAP + 1)),
+        413,
+    ),
+    Case(
         "length-past-the-body",
         _raw(LINE, "Content-Length: 500", body=BODY),
         400,
@@ -191,6 +199,28 @@ REFUSED = [
         400,
     ),
     Case("method-the-shim-does-not-serve", _raw("MARK{m} /v1/x HTTP/1.1"), 501),
+    # Transfer-Encoding: a chunked body needs a Content-Length the client lacks,
+    # whichever header or list entry names it.
+    Case(
+        "chunked-in-one-header",
+        _raw(LINE, "Transfer-Encoding: chunked", "Content-Length: 0"),
+        411,
+    ),
+    Case(
+        "chunked-after-another-coding",
+        _raw(LINE, "Transfer-Encoding: gzip, chunked", "Content-Length: 0"),
+        411,
+    ),
+    Case(
+        "chunked-in-a-second-header",
+        _raw(
+            LINE,
+            "Transfer-Encoding: identity",
+            "Transfer-Encoding: chunked",
+            "Content-Length: 0",
+        ),
+        411,
+    ),
     # A request line the server cannot read is answered as HTTP/0.9: no status.
     Case("request-line-garbled", _raw("GARBAGE {m} x y"), None),
     Case("request-line-of-two-words", _raw("GARBAGE {m}"), None),
@@ -220,6 +250,21 @@ FORWARDED = [
         200,
     ),
     Case("transfer-encoding-text", lambda m: _request(f"Transfer-Encoding: {m}"), 200),
+    # A length of digits is a length however many zeros lead it.
+    Case(
+        "length-padded-with-zeros",
+        _raw(
+            LINE,
+            "Content-Length: " + "0" * PADDING + str(len(BODY)),
+            body=BODY,
+        ),
+        200,
+    ),
+    Case(
+        "length-of-only-zeros",
+        _raw("GET /v1/models HTTP/1.1", "Content-Length: " + "0" * PADDING),
+        200,
+    ),
     Case(
         "model-name",
         lambda m: _request(body=json.dumps({"model": m, "messages": []})),

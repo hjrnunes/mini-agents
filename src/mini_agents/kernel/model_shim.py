@@ -226,10 +226,12 @@ def _read_body(request: BaseHTTPRequestHandler) -> bytes:
     text = declared[0]
     if len(declared) > 1 or not (text.isascii() and text.isdigit()):
         raise _Refused(400, "invalid Content-Length")
-    # Beyond 18 digits the value is over the cap, and ``int`` need not read it.
-    if len(text.lstrip("0")) > 18 or int(text) > MAX_BODY_BYTES:
+    # ``int`` refuses a string of over 4300 digits, zeros included, so it reads
+    # the significant digits only. Beyond 18 of them the value is over the cap.
+    digits = text.lstrip("0")
+    if len(digits) > 18 or int(digits or "0") > MAX_BODY_BYTES:
         raise _Refused(413, "the body is larger than the shim accepts")
-    remaining = int(text)
+    remaining = int(digits or "0")
     chunks: list[bytes] = []
     while remaining:
         try:
@@ -386,7 +388,8 @@ class ModelShim:
         inside = path == self._base_path or path.startswith(self._base_path + "/")
         if not inside:
             raise _Refused(404, "outside the shim's base path")
-        if "chunked" in request.headers.get("Transfer-Encoding", "").lower():
+        codings = request.headers.get_all("Transfer-Encoding", [])
+        if any("chunked" in coding.lower() for coding in codings):
             raise _Refused(411, "a request body needs a Content-Length")
         return path, _read_body(request)
 
