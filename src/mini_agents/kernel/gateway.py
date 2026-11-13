@@ -23,10 +23,13 @@ that name a model that needs it (``MODEL_REWRITES``; OGX names ``MODEL_ID``).
 ``MINI_AGENTS_REWRITE_LOG`` names the file the shim appends its rewrite rows to.
 
 The process runs until OGX exits or it gets SIGTERM or SIGINT, then stops OGX
-and the shim and removes the scratch directory. OGX's stores live in that
-directory, so each start is a fresh gateway. ``--state-dir`` keeps the
-directory: it holds the rendered OGX config (a placeholder key, never the real
-one) and OGX's stores.
+and the shim and removes the scratch directory. OGX gets SIGTERM and
+``TERMINATE_GRACE_SECONDS`` to exit; an OGX that is still running then gets
+SIGKILL, so a signal ends the gateway in a bounded time whatever OGX does with
+it. OGX runs in the gateway's process group, so a signal to that group reaches
+both. OGX's stores live in the scratch directory, so each start is a fresh
+gateway. ``--state-dir`` keeps the directory: it holds the rendered OGX config
+(a placeholder key, never the real one) and OGX's stores.
 """
 
 from __future__ import annotations
@@ -53,6 +56,10 @@ MODEL_ID_ENV = "MODEL_ID"
 # What OGX sends upstream in place of the key; the shim replaces it.
 PLACEHOLDER_KEY = "mini-agents-shim-placeholder"
 CONFIG_FILE = "ogx-config.yaml"
+# How long OGX gets to exit on SIGTERM before the gateway kills it.
+TERMINATE_GRACE_SECONDS = 10.0
+# How often the wait on OGX looks for a stop signal.
+STOP_POLL_SECONDS = 0.1
 
 
 def render_ogx_config(
@@ -140,6 +147,23 @@ def child_environment(
     return environment
 
 
+def end_ogx(ogx: subprocess.Popen[bytes]) -> None:
+    """Stop ``ogx``: SIGTERM, then SIGKILL once the grace period runs out."""
+
+    ogx.terminate()
+    try:
+        ogx.wait(timeout=TERMINATE_GRACE_SECONDS)
+    except subprocess.TimeoutExpired:
+        print(
+            f"gateway: OGX still ran {TERMINATE_GRACE_SECONDS:g}s after SIGTERM; "
+            "killing it",
+            file=sys.stderr,
+            flush=True,
+        )
+        ogx.kill()
+        ogx.wait()
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Start one target's gateway: the model shim, then OGX."
@@ -222,18 +246,21 @@ def main(argv: list[str] | None = None) -> int:
             # A signal between the spawn and this line saw no process to stop.
             if stopping:
                 ogx.terminate()
-        code = ogx.wait() if ogx is not None else 0
+        # Poll instead of one bare wait: the signal handler only sends SIGTERM,
+        # so a bare wait on an OGX that ignores it never reaches the kill.
+        code = 0
+        while ogx is not None and not stopping:
+            try:
+                code = ogx.wait(timeout=STOP_POLL_SECONDS)
+            except subprocess.TimeoutExpired:
+                continue
+            break
         if stopping:
             return 0
         return code if code >= 0 else 128 - code
     finally:
         if ogx is not None and ogx.poll() is None:
-            ogx.terminate()
-            try:
-                ogx.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                ogx.kill()
-                ogx.wait()
+            end_ogx(ogx)
         shim.stop()
         if not kept:
             shutil.rmtree(state_dir, ignore_errors=True)

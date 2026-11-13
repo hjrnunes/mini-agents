@@ -326,7 +326,9 @@ that URL.
   start is the reset (see "Reset (a fresh start)"), and the config names no
   reset command. A target whose config does name `health` and `reset` commands,
   such as the fixture in `tests/fixtures/stub_target`, resets in place.
-- **Stop**: send SIGTERM. The target and the gateway both exit on it.
+- **Stop**: send SIGTERM. The target and the gateway both exit on it. The
+  gateway gives OGX 10 seconds to exit on SIGTERM and kills it after that, so a
+  stop ends in a bounded time whatever OGX does with the signal.
 
 ### Gateway
 
@@ -367,4 +369,5 @@ target, through a stand-in for the testing tool: start, restart, stop, and no
 process left behind. `tests/test_gateway.py` runs real OGX from the airbnb
 config against a stub model provider (`tests/model_stub.py`), checks the
 requests the provider receives, and scans the files the run wrote for the key.
-No test calls a real model.
+`tests/test_gateway_shutdown.py` runs the gateway over a stand-in OGX that
+ignores SIGTERM. No test calls a real model.
