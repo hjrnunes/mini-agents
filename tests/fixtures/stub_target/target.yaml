@@ -1,8 +1,8 @@
 # A fixture target for the lifecycle tests: not a mini-agents domain. Same
-# target-v2 shape as the generated configs, written as JSON, which YAML reads
+# target-v1 shape as the generated configs, written as JSON, which YAML reads
 # unchanged. It names a health and a reset command and has no gateway block.
 {
-  "schema_version": "target-v2",
+  "schema_version": "target-v1",
   "target": "stub",
   "kind": "live",
   "authorized_as": "mock",

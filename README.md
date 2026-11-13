@@ -289,7 +289,7 @@ ledger path its state does not have.
 ## Target config (start, reset, stop)
 
 Each variant ships a `target.yaml` beside its declaration files. A testing tool
-starts, resets and stops the target from that file alone. It is `target-v2`
+starts, resets and stops the target from that file alone. It is `target-v1`
 written as JSON under a comment header, which YAML reads unchanged, and the
 generator writes it (`scripts/gen_declarations.py`, above); never edit it by
 hand.

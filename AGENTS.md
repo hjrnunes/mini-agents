@@ -22,7 +22,7 @@ Seeded attack scenarios live in `README.md`.
   `parse_seed` reads it and the domain `apply_seed` plants it into a state.
 - **Declaration file** (`declared-runtime-v1`) — a generated `tools-list.json`,
   `runtime-spec.yaml` or `value-facts.json`, checked against the live servers.
-- **Target config** (`target-v2`): a generated `target.yaml` beside them. It
+- **Target config** (`target-v1`): a generated `target.yaml` beside them. It
   holds the commands that start a variant and its gateway, and no secret.
 - **Gateway**: OGX for one target, behind a loopback model shim that holds
   the model key and rewrites the requests of a model that needs it.
